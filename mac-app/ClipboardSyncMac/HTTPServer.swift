@@ -153,6 +153,11 @@ final class HTTPServer {
     private func respond(to fd: Int32, request: Request) {
         print("[\(ts())] \(request.method) \(request.path)")
 
+        if request.method == "GET" && request.path == "/health" {
+            writeResponse(to: fd, status: "200 OK", body: #"{"status":"ok","device":"macbook-air"}"#)
+            return
+        }
+
         guard request.method == "POST", request.path == "/clipboard" else {
             writeResponse(to: fd, status: "404 Not Found", body: #"{"status":"error","message":"not found"}"#)
             return
@@ -165,8 +170,10 @@ final class HTTPServer {
             return
         }
 
+        let eventId = json["eventId"] as? String ?? "-"
+        let sourceDeviceId = json["sourceDeviceId"] as? String ?? "-"
         let preview = text.count > 60 ? String(text.prefix(60)) + "..." : text
-        print("[\(ts())] Clipboard set: \"\(preview)\"")
+        print("[\(ts())] Clipboard set from \(sourceDeviceId) [eventId=\(eventId)]: \"\(preview)\"")
 
         DispatchQueue.main.async {
             NSPasteboard.general.clearContents()
