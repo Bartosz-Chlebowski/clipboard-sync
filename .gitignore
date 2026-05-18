@@ -1,0 +1,39 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcshareddata/
+DerivedData/
+build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Android / Expo
+android-app/node_modules/
+android-app/.expo/
+android-app/android/build/
+android-app/android/.gradle/
+android-app/ios/build/
+android-app/ios/Pods/
+android-app/*.jks
+android-app/*.p8
+android-app/*.p12
+android-app/*.key
+android-app/*.mobileprovision
+android-app/npm-debug.*
+android-app/yarn-debug.*
+android-app/yarn-error.*
+
+# Editor
+.idea/
+*.swp
+*.swo
