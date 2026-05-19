@@ -1,6 +1,6 @@
 # Clipboard Sync - Android App
 
-Samsung S23+ -> Mac clipboard sync. Etap 2: przycisk Send przez HTTP.
+Samsung S23+ -> Mac clipboard sync. Etap 4: auto-sync w tle przez foreground service.
 
 ## Wymagania
 
@@ -36,21 +36,47 @@ Po pierwszym uruchomieniu na telefonie:
 
 ## Jak uzywac
 
+### Auto-sync (Etap 4)
+
+1. Wlacz przelacznik **Auto sync** na glownym ekranie.
+2. Przy pierwszym uruchomieniu pojawi sie systemowy dialog - dotknij **Allow** aby wylaczyl optymalizacje baterii.
+3. Skopiuj dowolny tekst na Samsungu - po maks. 2 sekundy tekst jest w schowku Maca.
+4. Powiadomienie "Monitoring clipboard..." pojawia sie w pasku stanu - to normalny stan.
+
+### Reczny send
+
 1. Skopiuj tekst na Samsungu (dlugie przycisnij -> Copy).
 2. Otwoz Clipboard Sync.
 3. Dotknij **Send clipboard to Mac**.
 4. Na Macu: `Cmd+V` wkleja tekst.
 
+## Optymalizacja baterii (Samsung One UI)
+
+**WYMAGANE** aby auto-sync dzialal po dluzszym czasie w tle:
+
+```
+Ustawienia -> Aplikacje -> Clipboard Sync -> Bateria -> Bez ograniczen
+```
+
+Bez tego One UI moze zamrozic service po kilku minutach mimo aktywnego foreground service.
+Apka przy pierwszym wlaczeniu Auto sync automatycznie otwiera systemowy dialog z prosba o to uprawnienie.
+
 ## Struktura projektu
 
 ```
 android-app/
-  App.tsx           - glowny ekran (UI)
+  App.tsx           - glowny ekran (UI) z togglem Auto sync
   lib/
     api.ts          - sendToMac(), checkHealth()
+    sync.ts         - useAutoSync hook, logika anti-loop
     storage.ts      - AsyncStorage helper
     types.ts        - typy wiadomosci JSON
-    constants.ts    - DEVICE_ID, DEFAULT_MAC_ADDRESS, itp.
+    constants.ts    - DEVICE_ID, itp.
+    websocket.ts    - useWebSocket hook z auto-reconnect
+  modules/
+    clipboard-native/   - lokalny modul Expo (Kotlin)
+      android/src/.../ClipboardNativeModule.kt  - API modulu
+      android/src/.../ClipboardService.kt       - foreground service + polling
   android/          - natywny kod Android (generowany przez prebuild)
   app.json          - konfiguracja Expo
 ```

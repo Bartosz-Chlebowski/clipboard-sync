@@ -10,6 +10,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -18,6 +19,7 @@ import { DEVICE_ID } from './lib/constants';
 import type { ClipboardUpdateMessage } from './lib/types';
 import { getWsUrl, saveWsUrl } from './lib/storage';
 import { useWebSocket, type WsStatus } from './lib/websocket';
+import { useAutoSync } from './lib/sync';
 
 const BLUE = '#2563EB';
 const GREEN = '#16A34A';
@@ -57,7 +59,25 @@ export default function App() {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const appState = useRef(AppState.currentState);
 
-  const { status: wsStatus, send: wsSend, reconnect: wsReconnect } = useWebSocket(wsUrl);
+  const handleIncomingMessage = useCallback(
+    (msg: Record<string, unknown>) => {
+      if (msg.type === 'clipboard_update' && typeof msg.text === 'string') {
+        notifyReceivedFromMac(msg.text);
+      }
+    },
+    // notifyReceivedFromMac is stable (useCallback with no deps), safe to reference after init
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const { status: wsStatus, send: wsSend, reconnect: wsReconnect } = useWebSocket(wsUrl, {
+    onMessage: handleIncomingMessage,
+  });
+
+  const { state: autoSync, toggle: toggleAutoSync, notifyReceivedFromMac } = useAutoSync(
+    wsSend,
+    wsStatus,
+  );
 
   useEffect(() => {
     getWsUrl().then((url) => {
@@ -126,6 +146,12 @@ export default function App() {
   const clipboardPreview =
     clipboardText.length > 120 ? clipboardText.slice(0, 120) + '...' : clipboardText;
 
+  const autoSyncPreview = autoSync.lastSentText
+    ? autoSync.lastSentText.length > 50
+      ? autoSync.lastSentText.slice(0, 50) + '...'
+      : autoSync.lastSentText
+    : null;
+
   return (
     <KeyboardAvoidingView
       style={styles.root}
@@ -184,6 +210,35 @@ export default function App() {
             ) : null}
           </View>
         )}
+
+        {/* Auto sync toggle */}
+        <View style={styles.card}>
+          <View style={styles.autoSyncRow}>
+            <View style={styles.autoSyncLeft}>
+              <Text style={styles.label}>Auto sync</Text>
+              <Text style={[styles.autoSyncStatus, autoSync.enabled ? styles.textOk : styles.textMuted]}>
+                {autoSync.enabled ? 'Active - monitoring clipboard' : 'Stopped'}
+              </Text>
+            </View>
+            <Switch
+              value={autoSync.enabled}
+              onValueChange={toggleAutoSync}
+              trackColor={{ false: '#D1D5DB', true: BLUE }}
+              thumbColor="#fff"
+            />
+          </View>
+          {autoSync.enabled && autoSyncPreview !== null && (
+            <View style={styles.lastSentBox}>
+              <Text style={styles.lastSentLabel}>Last sent</Text>
+              <Text style={styles.lastSentText} numberOfLines={2}>
+                {autoSyncPreview}
+              </Text>
+              {autoSync.lastSentAt && (
+                <Text style={styles.lastSentTime}>{formatTime(autoSync.lastSentAt)}</Text>
+              )}
+            </View>
+          )}
+        </View>
 
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
@@ -327,4 +382,22 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 14, textAlign: 'center', marginTop: -4 },
   textOk: { color: GREEN },
   textError: { color: RED },
+  textMuted: { color: '#9CA3AF' },
+  // Auto sync styles
+  autoSyncRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  autoSyncLeft: { flex: 1, gap: 2 },
+  autoSyncStatus: { fontSize: 12 },
+  lastSentBox: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    padding: 10,
+    gap: 2,
+  },
+  lastSentLabel: { fontSize: 11, color: '#9CA3AF', fontWeight: '600', textTransform: 'uppercase' },
+  lastSentText: { fontSize: 13, color: '#374151' },
+  lastSentTime: { fontSize: 11, color: '#9CA3AF' },
 });
