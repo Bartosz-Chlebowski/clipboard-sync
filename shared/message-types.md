@@ -1,8 +1,8 @@
 # Message Types
 
-All messages are JSON objects. Every message includes the common fields below.
+All messages are JSON objects. Every message includes a `type` field. WebSocket messages also carry `timestamp` where relevant.
 
-## Common Fields
+## Common Fields (clipboard_update)
 
 | Field          | Type   | Description                                              |
 |----------------|--------|----------------------------------------------------------|
@@ -14,7 +14,7 @@ All messages are JSON objects. Every message includes the common fields below.
 
 ## Message Type: `clipboard_update`
 
-Sent when clipboard content changes on the source device and should be pushed to the other device.
+Sent when clipboard content should be pushed to the other device.
 
 ```json
 {
@@ -27,11 +27,43 @@ Sent when clipboard content changes on the source device and should be pushed to
 }
 ```
 
-Additional fields:
-
 | Field | Type   | Description              |
 |-------|--------|--------------------------|
 | text  | string | Plain text clipboard data |
+
+## Message Type: `hello`
+
+Sent by client immediately after WebSocket connection is established.
+
+```json
+{
+  "type": "hello",
+  "sourceDeviceId": "samsung-s23-plus",
+  "deviceName": "Bart's S23+",
+  "protocolVersion": 1
+}
+```
+
+## Message Type: `hello_ack`
+
+Sent by server in response to `hello`.
+
+```json
+{
+  "type": "hello_ack",
+  "sourceDeviceId": "macbook-air",
+  "protocolVersion": 1
+}
+```
+
+## Message Type: `ping` / `pong`
+
+Server sends `ping` every 20 seconds. Client responds with `pong` echoing the timestamp. If no `pong` is received within 40 seconds, the server closes the connection.
+
+```json
+{ "type": "ping", "timestamp": 1710000000000 }
+{ "type": "pong", "timestamp": 1710000000000 }
+```
 
 ## Device ID Conventions
 
@@ -40,9 +72,38 @@ Additional fields:
 | Samsung S23+   | `samsung-s23-plus`  |
 | MacBook Air    | `macbook-air`       |
 
-## Future Message Types (not implemented yet)
+## Connection Lifecycle
 
-- `ping` - keepalive / connection check
-- `ack` - delivery acknowledgement
-- `pair_request` - pairing handshake
-- `pair_accept` - pairing confirmation
+```
+Client                          Server
+  |                               |
+  |---[ TCP connect ]------------>|
+  |                               |
+  |---[ HTTP GET /ws ]----------->|  (Upgrade: websocket header)
+  |<--[ 101 Switching Protocols ]-|
+  |                               |  -- WebSocket established --
+  |---{ hello }------------------>|
+  |<--{ hello_ack }---------------|
+  |                               |  -- Ready: clipboard_update can be sent --
+  |---{ clipboard_update }------->|
+  |                               |
+  |<--{ ping } (every 20s)--------|
+  |---{ pong }------------------>|
+  |                               |
+  |  (connection drop / network)  |
+  |                               |
+  |  [client auto-reconnects]     |
+  |   backoff: 1s, 2s, 4s...30s  |
+```
+
+### States (Android client)
+
+- `disconnected` - initial state, not trying to connect
+- `connecting` - TCP + WebSocket handshake in progress
+- `connected` - `hello_ack` received, ready to send
+- `reconnecting` - connection lost, waiting for backoff before retrying
+
+### HTTP endpoints (kept for curl testing)
+
+- `GET /health` - returns `{"status":"ok","device":"macbook-air"}`
+- `POST /clipboard` - accepts `clipboard_update` JSON body (same schema as above)

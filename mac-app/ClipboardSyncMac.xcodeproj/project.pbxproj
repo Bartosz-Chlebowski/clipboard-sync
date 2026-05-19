@@ -10,6 +10,7 @@
 		A4A540FC30D146B5001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A540FC30D146B5002 /* AppDelegate.swift */; };
 		A4A540FC30D146B5003 /* StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A540FC30D146B5004 /* StatusBarController.swift */; };
 		A4A540FC30D146B5005 /* HTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A540FC30D146B5006 /* HTTPServer.swift */; };
+		B3F2A1CD7E9042F10001 /* WSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3F2A1CD7E9042F10002 /* WSClient.swift */; };
 		CDE7C0019D6B4E6E0001 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDE7C0019D6B4E6E0002 /* main.swift */; };
 /* End PBXBuildFile section */
 
@@ -17,6 +18,7 @@
 		A4A540FC30D146B5002 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A4A540FC30D146B5004 /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
 		A4A540FC30D146B5006 /* HTTPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTTPServer.swift; sourceTree = "<group>"; };
+		B3F2A1CD7E9042F10002 /* WSClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WSClient.swift; sourceTree = "<group>"; };
 		A4A540FC30D146B5007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		CDE7C0019D6B4E6E0002 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		15D7C46547DD49DE0001 /* ClipboardSyncMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClipboardSyncMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -40,6 +42,7 @@
 				A4A540FC30D146B5002 /* AppDelegate.swift */,
 				A4A540FC30D146B5004 /* StatusBarController.swift */,
 				A4A540FC30D146B5006 /* HTTPServer.swift */,
+				B3F2A1CD7E9042F10002 /* WSClient.swift */,
 				A4A540FC30D146B5007 /* Info.plist */,
 			);
 			path = ClipboardSyncMac;
@@ -133,6 +136,7 @@
 				A4A540FC30D146B5001 /* AppDelegate.swift in Sources */,
 				A4A540FC30D146B5003 /* StatusBarController.swift in Sources */,
 				A4A540FC30D146B5005 /* HTTPServer.swift in Sources */,
+				B3F2A1CD7E9042F10001 /* WSClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -8,6 +8,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusBarController = StatusBarController()
         httpServer = HTTPServer(port: 8787, delegate: statusBarController)
+        httpServer.wsDelegate = statusBarController
         httpServer.start()
     }
 
