@@ -1,0 +1,9 @@
+<manifest>
+  <application>
+    <service
+      android:name="expo.modules.clipboardnative.ClipboardService"
+      android:exported="false"
+      android:foregroundServiceType="dataSync"
+      android:stopWithTask="false" />
+  </application>
+</manifest>

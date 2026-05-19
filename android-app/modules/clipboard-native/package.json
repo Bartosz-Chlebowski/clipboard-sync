@@ -1,0 +1,6 @@
+{
+  "name": "clipboard-native",
+  "version": "1.0.0",
+  "description": "Local Expo module for background clipboard monitoring",
+  "main": "src/index.ts"
+}
