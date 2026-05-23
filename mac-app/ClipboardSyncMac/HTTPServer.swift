@@ -13,14 +13,19 @@ protocol WSServerDelegate: AnyObject {
     func wsDidReceiveClipboard(text: String, deviceId: String)
 }
 
-final class HTTPServer {
+final class HTTPServer: NSObject, NetServiceDelegate {
 
     private let port: UInt16
     private weak var httpDelegate: HTTPServerDelegate?
     weak var wsDelegate: WSServerDelegate?
 
     private var serverFD: Int32 = -1
+    private var bonjourService: NetService?
     private let queue = DispatchQueue(label: "clipboard-sync.http", attributes: .concurrent)
+    private var pasteboardTimer: Timer?
+    private var pasteboardChangeCount = NSPasteboard.general.changeCount
+    private var lastBroadcastText: String?
+    private var lastAppliedRemoteText: String?
 
     // Accessed only on main queue
     private var wsClients: [UUID: WSClient] = [:]
@@ -28,6 +33,7 @@ final class HTTPServer {
     init(port: UInt16, delegate: HTTPServerDelegate) {
         self.port = port
         self.httpDelegate = delegate
+        super.init()
     }
 
     func start() {
@@ -39,7 +45,6 @@ final class HTTPServer {
 
         var reuse: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
-        setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &reuse, socklen_t(MemoryLayout<Int32>.size))
 
         var v6only: Int32 = 0
         setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, socklen_t(MemoryLayout<Int32>.size))
@@ -51,7 +56,7 @@ final class HTTPServer {
 
         let bindResult = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in6>.size))
+                Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in6>.size))
             }
         }
 
@@ -69,21 +74,57 @@ final class HTTPServer {
 
         serverFD = fd
         print("[\(ts())] Server listening on port \(port) (HTTP + WebSocket)")
+        publishBonjourService()
 
         queue.async { [weak self] in
             self?.acceptLoop()
         }
+        DispatchQueue.main.async { [weak self] in
+            self?.startPasteboardMonitor()
+        }
     }
 
     func stop() {
+        DispatchQueue.main.async { [weak self] in
+            self?.pasteboardTimer?.invalidate()
+            self?.pasteboardTimer = nil
+        }
         if serverFD >= 0 {
             Darwin.close(serverFD)
             serverFD = -1
         }
+        bonjourService?.stop()
+        bonjourService = nil
         DispatchQueue.main.async { [weak self] in
             self?.wsClients.values.forEach { $0.disconnect() }
             self?.wsClients.removeAll()
         }
+    }
+
+    // MARK: - Bonjour
+
+    private func publishBonjourService() {
+        let serviceName = Host.current().localizedName ?? "Clipboard Sync Mac"
+        let service = NetService(domain: "local.", type: "_clipboard-sync._tcp.", name: serviceName, port: Int32(port))
+        service.delegate = self
+        service.includesPeerToPeer = true
+
+        let txt: [String: Data] = [
+            "path": Data("/ws".utf8),
+            "version": Data("1".utf8),
+            "device": Data("mac".utf8)
+        ]
+        service.setTXTRecord(NetService.data(fromTXTRecord: txt))
+        service.publish()
+        bonjourService = service
+    }
+
+    func netServiceDidPublish(_ sender: NetService) {
+        print("[\(ts())] Bonjour published \(sender.name).\(sender.type)\(sender.domain):\(sender.port)")
+    }
+
+    func netService(_ sender: NetService, didNotPublish errorDict: [String: NSNumber]) {
+        print("[\(ts())] Bonjour publish failed: \(errorDict)")
     }
 
     // MARK: - Accept loop
@@ -252,28 +293,65 @@ final class HTTPServer {
             return
         }
 
-        guard
-            let json = try? JSONSerialization.jsonObject(with: request.body) as? [String: Any],
-            let text = json["text"] as? String
-        else {
-            print("[\(ts())] Bad JSON - missing text field")
-            writeResponse(to: fd, status: "400 Bad Request",
-                          body: #"{"status":"error","message":"missing text field"}"#)
+        print("[\(ts())] HTTP clipboard rejected - encrypted WebSocket required")
+        writeResponse(to: fd, status: "426 Upgrade Required",
+                      body: #"{"status":"error","message":"use encrypted websocket"}"#)
+    }
+
+    // MARK: - Local clipboard -> WebSocket clients
+
+    private func startPasteboardMonitor() {
+        pasteboardTimer?.invalidate()
+        pasteboardChangeCount = NSPasteboard.general.changeCount
+        pasteboardTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.checkLocalPasteboard()
+        }
+    }
+
+    private func checkLocalPasteboard() {
+        let pasteboard = NSPasteboard.general
+        let currentChangeCount = pasteboard.changeCount
+        guard currentChangeCount != pasteboardChangeCount else { return }
+        pasteboardChangeCount = currentChangeCount
+
+        guard let text = pasteboard.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
 
-        let eventId = json["eventId"] as? String ?? "-"
-        let sourceDeviceId = json["sourceDeviceId"] as? String ?? "-"
-        let preview = text.count > 60 ? String(text.prefix(60)) + "..." : text
-        print("[\(ts())] HTTP clipboard from \(sourceDeviceId) [eventId=\(eventId)]: \"\(preview)\"")
-
-        DispatchQueue.main.async {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
+        if text == lastAppliedRemoteText {
+            lastAppliedRemoteText = nil
+            lastBroadcastText = text
+            return
         }
 
-        httpDelegate?.didReceiveClipboardText(text)
-        writeResponse(to: fd, status: "200 OK", body: #"{"status":"ok"}"#)
+        guard text != lastBroadcastText else { return }
+        broadcastClipboard(text)
+    }
+
+    private func broadcastClipboard(_ text: String) {
+        let clients = wsClients.values.filter { $0.isConnected && !$0.sourceDeviceId.isEmpty }
+        guard !clients.isEmpty else { return }
+
+        lastBroadcastText = text
+        print("[\(ts())] Local clipboard -> \(clients.count) WS client(s) [chars=\(text.count)]")
+
+        let message: [String: Any] = [
+            "type": "clipboard_update",
+            "eventId": UUID().uuidString,
+            "sourceDeviceId": "macbook-air",
+            "source": "mac",
+            "text": text,
+            "timestamp": Int64(Date().timeIntervalSince1970 * 1000)
+        ]
+
+        for client in clients {
+            client.sendJSON(message)
+        }
+    }
+
+    private func markRemoteClipboardApplied(_ text: String) {
+        lastAppliedRemoteText = text
+        pasteboardChangeCount = NSPasteboard.general.changeCount
     }
 
     private func writeResponse(to fd: Int32, status: String, body: String) {
@@ -298,6 +376,14 @@ extension HTTPServer: WSClientDelegate {
 
     func wsClientReady(_ client: WSClient) {
         // Called on main queue
+        let duplicateClients = wsClients.values.filter {
+            $0.id != client.id && $0.sourceDeviceId == client.sourceDeviceId
+        }
+        duplicateClients.forEach { oldClient in
+            wsClients.removeValue(forKey: oldClient.id)
+            oldClient.disconnect()
+        }
+
         let snapshot = readyClientsSnapshot()
         print("[\(ts())] WS client ready: \(client.sourceDeviceId). Total: \(snapshot.count)")
         wsDelegate?.wsClientsDidChange(clients: snapshot)
@@ -305,6 +391,7 @@ extension HTTPServer: WSClientDelegate {
 
     func wsClientDidReceiveClipboard(_ client: WSClient, text: String, eventId: String) {
         // Called on main queue
+        markRemoteClipboardApplied(text)
         wsDelegate?.wsDidReceiveClipboard(text: text, deviceId: client.sourceDeviceId)
     }
 

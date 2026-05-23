@@ -49,6 +49,10 @@ class StatusBarController: NSObject, HTTPServerDelegate, WSServerDelegate {
         portItem.isEnabled = false
         menu.addItem(portItem)
 
+        let encryptionItem = NSMenuItem(title: "Encryption: AES-256-GCM", action: nil, keyEquivalent: "")
+        encryptionItem.isEnabled = false
+        menu.addItem(encryptionItem)
+
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(
@@ -62,9 +66,8 @@ class StatusBarController: NSObject, HTTPServerDelegate, WSServerDelegate {
     // MARK: - HTTPServerDelegate
 
     func didReceiveClipboardText(_ text: String) {
-        let preview = text.count > 40 ? String(text.prefix(40)) + "..." : text
         DispatchQueue.main.async {
-            self.lastReceivedItem.title = "Last received: \(preview)"
+            self.lastReceivedItem.title = "Last received: \(text.count) chars"
         }
     }
 
@@ -90,7 +93,6 @@ class StatusBarController: NSObject, HTTPServerDelegate, WSServerDelegate {
     }
 
     func wsDidReceiveClipboard(text: String, deviceId: String) {
-        let preview = text.count > 40 ? String(text.prefix(40)) + "..." : text
-        lastReceivedItem.title = "Last received: \(preview) (from \(deviceId))"
+        lastReceivedItem.title = "Last received: \(text.count) chars (from \(deviceId))"
     }
 }

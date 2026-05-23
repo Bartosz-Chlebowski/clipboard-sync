@@ -1,108 +1,108 @@
 # Clipboard Sync - Android App
 
-Samsung S23+ -> Mac clipboard sync. Etap 4: auto-sync w tle przez foreground service.
+Android client for Clipboard Sync. This app is for local LAN testing from
+source, not Play Store distribution by the upstream author.
 
-## Wymagania
+## Requirements
 
-- Node.js 18+
-- Android Studio (Flamingo lub nowszy) + Android SDK
-- JDK 17
-- Samsung S23+ w trybie deweloperskim (USB debugging ON)
-- Ten sam Wi-Fi co MacBook
-- Mac app z Etapu 1 uruchomiona (`mac-app/ClipboardSyncMac.xcodeproj`)
+- Node.js `>=20.19.4` and npm `>=10`.
+- JDK 17.
+- Android Studio / Android SDK.
+- Android device with USB debugging for local install.
+- Same trusted Wi-Fi/LAN as the Mac app.
+- Shizuku or ADB app-op setup required by the native clipboard access path.
 
-## Uruchomienie (dev build na telefonie)
+## Commands
 
 ```bash
 cd android-app
-npm install
-
-# Pierwsze uruchomienie - buduje apk i instaluje na telefonie
-npx expo run:android
-
-# Kolejne uruchomienia (jezeli apk juz zainstalowana)
-npx expo start --dev-client
+npm ci
+npm run typecheck
+npm run android:debug
+npm run android:release
 ```
 
-## Konfiguracja
+`npm run android:debug` builds a debug APK for normal local device testing.
 
-Po pierwszym uruchomieniu na telefonie:
+`npm run android:release` builds a release variant. Without signing env vars it
+is unsigned and only useful for verifying that the release build completes.
 
-1. Dotknij **Settings** (prawy gorny rog).
-2. Wpisz adres Maca: `192.168.X.X:8787` lub `macbook.local:8787`.
-   - Adres IP znajdziesz w `System Settings > Wi-Fi > Details`.
-3. Dotknij **Save**.
-4. Dotknij **Test connection** - powinno pojawic sie "Connected - device: macbook-air".
+## Release Signing
 
-## Jak uzywac
-
-### Auto-sync (Etap 4)
-
-1. Wlacz przelacznik **Auto sync** na glownym ekranie.
-2. Przy pierwszym uruchomieniu pojawi sie systemowy dialog - dotknij **Allow** aby wylaczyl optymalizacje baterii.
-3. Skopiuj dowolny tekst na Samsungu - po maks. 2 sekundy tekst jest w schowku Maca.
-4. Powiadomienie "Monitoring clipboard..." pojawia sie w pasku stanu - to normalny stan.
-
-### Reczny send
-
-1. Skopiuj tekst na Samsungu (dlugie przycisnij -> Copy).
-2. Otwoz Clipboard Sync.
-3. Dotknij **Send clipboard to Mac**.
-4. Na Macu: `Cmd+V` wkleja tekst.
-
-## Optymalizacja baterii (Samsung One UI)
-
-**WYMAGANE** aby auto-sync dzialal po dluzszym czasie w tle:
-
-```
-Ustawienia -> Aplikacje -> Clipboard Sync -> Bateria -> Bez ograniczen
-```
-
-Bez tego One UI moze zamrozic service po kilku minutach mimo aktywnego foreground service.
-Apka przy pierwszym wlaczeniu Auto sync automatycznie otwiera systemowy dialog z prosba o to uprawnienie.
-
-## Struktura projektu
-
-```
-android-app/
-  App.tsx           - glowny ekran (UI) z togglem Auto sync
-  lib/
-    api.ts          - sendToMac(), checkHealth()
-    sync.ts         - useAutoSync hook, logika anti-loop
-    storage.ts      - AsyncStorage helper
-    types.ts        - typy wiadomosci JSON
-    constants.ts    - DEVICE_ID, itp.
-    websocket.ts    - useWebSocket hook z auto-reconnect
-  modules/
-    clipboard-native/   - lokalny modul Expo (Kotlin)
-      android/src/.../ClipboardNativeModule.kt  - API modulu
-      android/src/.../ClipboardService.kt       - foreground service + polling
-  android/          - natywny kod Android (generowany przez prebuild)
-  app.json          - konfiguracja Expo
-```
-
-## Budowanie APK (bez kabla USB)
+Release signing is optional and only for downstream users or forks that have
+their own keystore. Do not commit private signing material. Create the keystore
+outside the repo and set:
 
 ```bash
-npx expo run:android --variant release
+export CLIPBOARD_SYNC_ANDROID_KEYSTORE=/absolute/path/to/release.keystore
+export CLIPBOARD_SYNC_ANDROID_KEYSTORE_PASSWORD=...
+export CLIPBOARD_SYNC_ANDROID_KEY_ALIAS=...
+export CLIPBOARD_SYNC_ANDROID_KEY_PASSWORD=...
+npm run android:release
 ```
 
-APK pojawi sie w `android/app/build/outputs/apk/release/`.
+The repo ignores `.jks`, `.keystore`, `.p12`, `.p8`, `.key`, certificates, and
+generated build outputs.
+
+## Dev Notes
+
+The Expo dev-client package is intentionally not part of the public release
+path. Use the regular Expo/React Native debug build:
+
+```bash
+npm run android
+npm start
+```
+
+The old dev-client network inspector Gradle property was removed with the
+dev-client dependency.
+
+## Configuration
+
+After installing a debug build on the phone:
+
+1. Open **Settings**.
+2. Tap **Find Mac automatically** to discover `_clipboard-sync._tcp` over
+   Bonjour/mDNS.
+3. If discovery is blocked, enter a manual URL such as
+   `ws://192.168.X.X:8787/ws` or `ws://macbook.local:8787/ws`.
+4. Tap **Save & Reconnect**.
+
+The WebSocket session negotiates a key with P-256 ECDH and encrypts application
+payloads with AES-256-GCM. Plain HTTP clipboard sync is disabled.
+
+## Background Sync
+
+Auto sync runs through a foreground service and requires the visible Android
+notification. Long-running background sync may also require:
+
+- Shizuku or ADB app-op clipboard access.
+- Battery optimization disabled for Clipboard Sync.
+- OEM background restrictions adjusted.
+
+Boot autostart is best effort. Android 15+ restricts `BOOT_COMPLETED` receivers
+from starting `dataSync` foreground services for apps targeting API 35+, so the
+app may require manual Auto sync start after reboot.
 
 ## Troubleshooting
 
-**"Network error: Network request failed"**
-- Upewnij sie ze Mac i Samsung sa w tej samej sieci Wi-Fi.
-- Sprawdz czy Mac app jest uruchomiona (ikona w menu barze).
-- Jesli uzywasz `macbook.local`, sprobuj zamiast tego bezposredniego IP.
+`configs.toReversed is not a function`
 
-**"Timed out (5s)"**
-- Firewall na Macu moze blokowac port 8787.
-- Sprawdz: `System Settings > Network > Firewall`.
+Run the build with Node.js `>=20.19.4`. This repo has `.nvmrc`; `nvm use` should
+select the intended version.
 
-**"Clipboard is empty"**
-- Skopiuj tekst zanim klikniesz Send.
-- Dotknij **Refresh** zeby odswiezyc podglad schowka.
+Auto-discovery fails
 
-**Apka nie widzi zmian po edycji kodu**
-- Potrząsnij telefonem -> "Reload" lub uzyj `npx expo start --dev-client`.
+Check that the Mac app is running and that the network does not block mDNS.
+Manual IP remains supported.
+
+Background sync stops
+
+Set Android battery mode for Clipboard Sync to unrestricted and keep the
+foreground notification enabled.
+
+Release APK is unsigned
+
+Unsigned release builds are not installable production artifacts, and debug APKs
+are for local testing only. Downstream users who decide to distribute their own
+fork need their own signing setup outside this repo.

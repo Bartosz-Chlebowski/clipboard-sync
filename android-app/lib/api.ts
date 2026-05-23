@@ -1,6 +1,5 @@
-import * as Crypto from 'expo-crypto';
-import { DEVICE_ID, REQUEST_TIMEOUT_MS } from './constants';
-import type { ApiResponse, ClipboardUpdateMessage, HealthResponse } from './types';
+import { REQUEST_TIMEOUT_MS } from './constants';
+import type { ApiResponse, HealthResponse } from './types';
 
 function buildUrl(macAddress: string, path: string): string {
   const base = macAddress.includes('://') ? macAddress : `http://${macAddress}`;
@@ -23,36 +22,11 @@ export async function sendToMac(
     return { status: 'error', message: 'Clipboard is empty' };
   }
 
-  const body: ClipboardUpdateMessage = {
-    type: 'clipboard_update',
-    eventId: Crypto.randomUUID(),
-    sourceDeviceId: DEVICE_ID,
-    source: 'android',
-    text,
-    timestamp: Date.now(),
+  void macAddress;
+  return {
+    status: 'error',
+    message: 'Plain HTTP clipboard sync is disabled. Use encrypted WebSocket sync.',
   };
-
-  let response: Response;
-  try {
-    response = await fetchWithTimeout(buildUrl(macAddress, '/clipboard'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes('aborted') || msg.includes('timeout')) {
-      return { status: 'error', message: 'Request timed out (5s) - is Mac reachable?' };
-    }
-    return { status: 'error', message: `Network error: ${msg}` };
-  }
-
-  if (!response.ok) {
-    return { status: 'error', message: `Server returned ${response.status}` };
-  }
-
-  const json = (await response.json()) as ApiResponse;
-  return json;
 }
 
 export async function checkHealth(macAddress: string): Promise<HealthResponse> {

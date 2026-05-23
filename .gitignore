@@ -3,12 +3,21 @@
 .AppleDouble
 .LSOverride
 
+# Local tool state
+.claude/
+.playwright-mcp/
+android-app/.claude/
+
 # Xcode
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
+**/xcuserdata/
+*.xcuserstate
 *.xcodeproj/project.xcworkspace/xcshareddata/
 DerivedData/
 build/
+mac-app/dist/
+mac-app/build/
 *.ipa
 *.dSYM.zip
 *.dSYM
@@ -17,18 +26,46 @@ build/
 .build/
 .swiftpm/
 
+# Private signing material
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.cer
+*.crt
+*.pem
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+
 # Android / Expo
 android-app/node_modules/
 android-app/.expo/
 android-app/android/build/
 android-app/android/.gradle/
+android-app/android/app/build/
+android-app/android/app/.cxx/
+android-app/android/local.properties
 android-app/ios/build/
 android-app/ios/Pods/
 android-app/*.jks
+android-app/**/*.jks
+android-app/**/*.keystore
 android-app/*.p8
+android-app/**/*.p8
 android-app/*.p12
+android-app/**/*.p12
 android-app/*.key
+android-app/**/*.key
+android-app/**/*.cer
+android-app/**/*.crt
+android-app/**/*.pem
+android-app/**/*.certSigningRequest
 android-app/*.mobileprovision
+android-app/**/*.mobileprovision
+android-app/*.provisionprofile
+android-app/**/*.provisionprofile
 android-app/npm-debug.*
 android-app/yarn-debug.*
 android-app/yarn-error.*

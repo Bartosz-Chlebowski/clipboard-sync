@@ -1,6 +1,6 @@
 # Message Types
 
-All messages are JSON objects. Every message includes a `type` field. WebSocket messages also carry `timestamp` where relevant.
+All logical messages are JSON objects. Every logical message includes a `type` field. WebSocket messages are sent inside the encrypted envelope described in `protocol.md`.
 
 ## Common Fields (clipboard_update)
 
@@ -82,13 +82,15 @@ Client                          Server
   |---[ HTTP GET /ws ]----------->|  (Upgrade: websocket header)
   |<--[ 101 Switching Protocols ]-|
   |                               |  -- WebSocket established --
-  |---{ hello }------------------>|
-  |<--{ hello_ack }---------------|
+  |---{ key_exchange }----------->|
+  |<--{ key_exchange_ack }--------|
+  |---{ encrypted(hello) }------->|
+  |<--{ encrypted(hello_ack) }----|
   |                               |  -- Ready: clipboard_update can be sent --
-  |---{ clipboard_update }------->|
+  |---{ encrypted(clipboard_update) }---->|
   |                               |
-  |<--{ ping } (every 20s)--------|
-  |---{ pong }------------------>|
+  |<--{ encrypted(ping) } (every 20s)-----|
+  |---{ encrypted(pong) }---------------->|
   |                               |
   |  (connection drop / network)  |
   |                               |
@@ -103,7 +105,7 @@ Client                          Server
 - `connected` - `hello_ack` received, ready to send
 - `reconnecting` - connection lost, waiting for backoff before retrying
 
-### HTTP endpoints (kept for curl testing)
+### HTTP endpoints
 
 - `GET /health` - returns `{"status":"ok","device":"macbook-air"}`
-- `POST /clipboard` - accepts `clipboard_update` JSON body (same schema as above)
+- `POST /clipboard` - disabled; returns `426 Upgrade Required`

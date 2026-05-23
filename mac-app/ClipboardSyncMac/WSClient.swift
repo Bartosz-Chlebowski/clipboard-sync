@@ -1,6 +1,51 @@
 import AppKit
+import CryptoKit
 import Darwin
 import Dispatch
+
+enum MessageCrypto {
+    static func encryptJSON(_ obj: [String: Any], using key: SymmetricKey) -> [String: Any]? {
+        guard
+            let plain = try? JSONSerialization.data(withJSONObject: obj),
+            let sealed = try? AES.GCM.seal(plain, using: key),
+            let combined = sealed.combined
+        else { return nil }
+
+        return [
+            "type": "encrypted",
+            "version": 1,
+            "alg": "AES-256-GCM",
+            "payload": combined.base64EncodedString()
+        ]
+    }
+
+    static func decryptEnvelope(_ obj: [String: Any], using key: SymmetricKey) -> [String: Any]? {
+        guard
+            obj["type"] as? String == "encrypted",
+            let payload = obj["payload"] as? String,
+            let combined = Data(base64Encoded: payload),
+            let sealed = try? AES.GCM.SealedBox(combined: combined),
+            let plain = try? AES.GCM.open(sealed, using: key),
+            let json = try? JSONSerialization.jsonObject(with: plain) as? [String: Any]
+        else { return nil }
+        return json
+    }
+
+    static func deriveSessionKey(
+        privateKey: P256.KeyAgreement.PrivateKey,
+        remotePublicKey: P256.KeyAgreement.PublicKey
+    ) -> SymmetricKey? {
+        guard let sharedSecret = try? privateKey.sharedSecretFromKeyAgreement(with: remotePublicKey) else {
+            return nil
+        }
+        return sharedSecret.hkdfDerivedSymmetricKey(
+            using: SHA256.self,
+            salt: Data("ClipboardSyncSessionV1".utf8),
+            sharedInfo: Data(),
+            outputByteCount: 32
+        )
+    }
+}
 
 private enum WSOp: UInt8 {
     case continuation = 0x0
@@ -35,6 +80,7 @@ final class WSClient {
     private var pingTimer: DispatchSourceTimer?
     private let lock = NSLock()
     private var _connected = true
+    private var sessionKey: SymmetricKey?
 
     var isConnected: Bool {
         lock.lock(); defer { lock.unlock() }
@@ -74,9 +120,23 @@ final class WSClient {
                 let str = String(data: frame.payload, encoding: .utf8),
                 let data = str.data(using: .utf8),
                 let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                let type = json["type"] as? String
+                let wireType = json["type"] as? String
             else { return }
-            handleMessage(type: type, json: json)
+
+            if wireType == "key_exchange" {
+                handleKeyExchange(json)
+                return
+            }
+
+            guard
+                wireType == "encrypted",
+                let sessionKey,
+                let decrypted = MessageCrypto.decryptEnvelope(json, using: sessionKey),
+                  let type = decrypted["type"] as? String else {
+                print("[\(ts())] Rejected unencrypted or invalid WS message from \(remoteIP)")
+                return
+            }
+            handleMessage(type: type, json: decrypted)
 
         case .ping:
             sendFrame(opcode: .pong, payload: frame.payload)
@@ -91,6 +151,34 @@ final class WSClient {
         default:
             break
         }
+    }
+
+    private func handleKeyExchange(_ json: [String: Any]) {
+        guard
+            let publicKeyBase64 = json["publicKey"] as? String,
+            let publicKeyData = Data(base64Encoded: publicKeyBase64),
+            let remotePublicKey = try? P256.KeyAgreement.PublicKey(derRepresentation: publicKeyData)
+        else {
+            print("[\(ts())] Invalid WS key exchange from \(remoteIP)")
+            disconnect()
+            return
+        }
+
+        let privateKey = P256.KeyAgreement.PrivateKey()
+        guard let key = MessageCrypto.deriveSessionKey(privateKey: privateKey, remotePublicKey: remotePublicKey) else {
+            print("[\(ts())] Failed WS session key derivation for \(remoteIP)")
+            disconnect()
+            return
+        }
+
+        sessionKey = key
+        sendPlainJSON([
+            "type": "key_exchange_ack",
+            "version": 1,
+            "alg": "P-256-ECDH+HKDF-SHA256",
+            "publicKey": privateKey.publicKey.derRepresentation.base64EncodedString()
+        ])
+        print("[\(ts())] WS session key established with \(remoteIP)")
     }
 
     private func handleMessage(type: String, json: [String: Any]) {
@@ -108,8 +196,7 @@ final class WSClient {
         case "clipboard_update":
             guard let text = json["text"] as? String else { return }
             let eventId = json["eventId"] as? String ?? "-"
-            let preview = text.count > 60 ? String(text.prefix(60)) + "..." : text
-            print("[\(ts())] WS clipboard from \(sourceDeviceId) [eventId=\(eventId)]: \"\(preview)\"")
+            print("[\(ts())] WS clipboard from \(sourceDeviceId) [eventId=\(eventId), chars=\(text.count)]")
             DispatchQueue.main.async {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
@@ -210,6 +297,15 @@ final class WSClient {
     }
 
     func sendJSON(_ obj: [String: Any]) {
+        guard
+            let sessionKey,
+            let encrypted = MessageCrypto.encryptJSON(obj, using: sessionKey),
+            let data = try? JSONSerialization.data(withJSONObject: encrypted)
+        else { return }
+        sendFrame(opcode: .text, payload: data)
+    }
+
+    private func sendPlainJSON(_ obj: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: obj) else { return }
         sendFrame(opcode: .text, payload: data)
     }

@@ -12,6 +12,7 @@
 		A4A540FC30D146B5005 /* HTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A540FC30D146B5006 /* HTTPServer.swift */; };
 		B3F2A1CD7E9042F10001 /* WSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3F2A1CD7E9042F10002 /* WSClient.swift */; };
 		CDE7C0019D6B4E6E0001 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDE7C0019D6B4E6E0002 /* main.swift */; };
+		D94A5B2012A64B3A0001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D94A5B2012A64B3A0002 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -21,6 +22,7 @@
 		B3F2A1CD7E9042F10002 /* WSClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WSClient.swift; sourceTree = "<group>"; };
 		A4A540FC30D146B5007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		CDE7C0019D6B4E6E0002 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		D94A5B2012A64B3A0002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		15D7C46547DD49DE0001 /* ClipboardSyncMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClipboardSyncMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -44,6 +46,7 @@
 				A4A540FC30D146B5006 /* HTTPServer.swift */,
 				B3F2A1CD7E9042F10002 /* WSClient.swift */,
 				A4A540FC30D146B5007 /* Info.plist */,
+				D94A5B2012A64B3A0002 /* Assets.xcassets */,
 			);
 			path = ClipboardSyncMac;
 			sourceTree = "<group>";
@@ -122,6 +125,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D94A5B2012A64B3A0001 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -264,7 +268,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = ClipboardSyncMac/ClipboardSyncMac.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
@@ -289,7 +294,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = ClipboardSyncMac/ClipboardSyncMac.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
