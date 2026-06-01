@@ -1,7 +1,8 @@
 # Clipboard Sync - Android App
 
-Android client for Clipboard Sync. This app is for local LAN testing from
-source, not Play Store distribution by the upstream author.
+Android client for Clipboard Sync. The normal public install path starts from
+the Mac DMG: the macOS onboarding launcher downloads the APK from GitHub
+Releases and installs it through ADB.
 
 ## Requirements
 
@@ -22,16 +23,17 @@ npm run android:debug
 npm run android:release
 ```
 
-`npm run android:debug` builds a debug APK for normal local device testing.
+`npm run android:debug` builds the APK used by the Mac onboarding launcher for
+ADB installation.
 
 `npm run android:release` builds a release variant. Without signing env vars it
 is unsigned and only useful for verifying that the release build completes.
 
 ## Release Signing
 
-Release signing is optional and only for downstream users or forks that have
-their own keystore. Do not commit private signing material. Create the keystore
-outside the repo and set:
+Release signing is only needed for alternative Android distribution channels
+that require a private keystore. Do not commit private signing material. Create
+the keystore outside the repo and set:
 
 ```bash
 export CLIPBOARD_SYNC_ANDROID_KEYSTORE=/absolute/path/to/release.keystore
@@ -59,7 +61,8 @@ dev-client dependency.
 
 ## Configuration
 
-After installing a debug build on the phone:
+After installing the Android app through the Mac onboarding launcher or a manual
+ADB install:
 
 1. Open **Settings**.
 2. Tap **Find Mac automatically** to discover `_clipboard-sync._tcp` over
@@ -103,6 +106,7 @@ foreground notification enabled.
 
 Release APK is unsigned
 
-Unsigned release builds are not installable production artifacts, and debug APKs
-are for local testing only. Downstream users who decide to distribute their own
-fork need their own signing setup outside this repo.
+Unsigned release builds are not installable production artifacts. The GitHub
+release uses the debug-signed APK because the Mac launcher installs it through
+ADB during onboarding. A Play Store style distribution would need a separate
+signing setup outside this repo.

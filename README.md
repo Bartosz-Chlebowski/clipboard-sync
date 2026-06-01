@@ -1,7 +1,7 @@
 # Clipboard Sync
 
-Clipboard Sync is an experimental local LAN clipboard bridge between a macOS
-menu bar app and an Android phone.
+Clipboard Sync is a local LAN clipboard bridge between a macOS menu bar app and
+an Android phone.
 
 The GitHub release is Mac-first: install the DMG on macOS, then use the Mac
 onboarding launcher to install and configure the Android app automatically over
@@ -10,7 +10,7 @@ install it manually during the normal setup flow.
 
 ## Status
 
-- Experimental local Wi-Fi/LAN project.
+- Public GitHub release for trusted local-network testing.
 - Clipboard data is transferred over an encrypted WebSocket on port `8787`.
 - macOS advertises `_clipboard-sync._tcp` with Bonjour/mDNS.
 - Android can discover the Mac automatically or use a manual `ws://.../ws`
@@ -42,19 +42,31 @@ only be installed manually if the automated onboarding path fails.
 
 ## Requirements
 
+For the normal GitHub install flow:
+
+- macOS 13+.
+- Android phone with USB debugging enabled.
+- Android Platform Tools available on the Mac (`adb` on PATH, Android Studio
+  SDK, or `brew install android-platform-tools`).
+- Both devices on the same trusted local network.
+
+For source builds:
+
 - Node.js `>=20.19.4` and npm `>=10`.
   - The repo has `.nvmrc`; run `nvm use` before Android commands.
   - Older Node versions can fail Android release bundling with
     `TypeError: configs.toReversed is not a function`.
 - JDK 17.
-- Android Studio / Android SDK for Android builds.
+- Android Studio / Android SDK.
 - macOS 13+ and Xcode 15+ for the Mac app.
-- Android device with USB debugging for local install/testing.
-- Both devices on the same trusted local network.
 
 ## Android
 
-Install and typecheck:
+The public release publishes `ClipboardSyncAndroid.apk` so the Mac onboarding
+launcher can install it through ADB. It is also available for manual recovery,
+but the normal user flow starts from the Mac DMG.
+
+Source build setup:
 
 ```bash
 cd android-app
@@ -62,7 +74,7 @@ npm ci
 npm run typecheck
 ```
 
-Build a debug APK for local testing:
+Build the APK used for ADB onboarding:
 
 ```bash
 cd android-app
@@ -77,12 +89,12 @@ npm run android:release
 ```
 
 If no release signing environment variables are set, Gradle produces an
-unsigned release APK. That is useful for build verification only, not local
-installation or public distribution. Use the debug APK for normal local device
-testing.
+unsigned release APK. That is useful for build verification only. The GitHub
+release asset uses the debug-signed APK because the Mac launcher installs it
+through ADB during onboarding.
 
-Release signing is optional and only for downstream users or forks that have
-their own keystore. Create the keystore outside the repo and set:
+Release signing is only needed for alternative Android distribution channels
+that require a private keystore. Create the keystore outside the repo and set:
 
 ```bash
 export CLIPBOARD_SYNC_ANDROID_KEYSTORE=/absolute/path/to/release.keystore
@@ -97,6 +109,9 @@ Do not commit `.jks`, `.keystore`, `.p12`, `.p8`, `.key`, certificates, or APK
 build outputs.
 
 ## macOS
+
+Most users should install `ClipboardSyncMac.dmg` from the latest GitHub release.
+The source build path below is for development.
 
 Local debug build from Xcode:
 
@@ -118,11 +133,10 @@ xcodebuild -project ClipboardSyncMac.xcodeproj \
 ```
 
 The project intentionally leaves `DEVELOPMENT_TEAM` empty and uses local
-ad-hoc signing for source builds. The upstream project does not ship notarized
-macOS releases. Developer ID Application signing, hardened runtime release
-settings, and notarization are optional downstream distribution work for a fork
-or user with their own Apple Developer account. Do not commit private team IDs,
-profiles, or certificates.
+ad-hoc signing for source builds. The public GitHub DMG is not notarized.
+Developer ID Application signing, hardened runtime release settings, and
+notarization can be added later with an Apple Developer account. Do not commit
+private team IDs, profiles, or certificates.
 
 ## Discovery
 
@@ -194,10 +208,10 @@ Disable battery optimization for the app, keep the foreground notification
 enabled, and check vendor-specific background limits. Android 15+ and some OEM
 builds may still stop or block background work.
 
-macOS build signs locally only
+macOS warns that the app is not notarized
 
-That is expected. Developer ID signing and notarization are optional downstream
-steps for users who decide to distribute their own fork.
+That is expected for the current GitHub release. The app is ad-hoc signed, not
+Developer ID notarized.
 
 ## Repo Layout
 
