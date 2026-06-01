@@ -13,6 +13,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         httpServer = HTTPServer(port: 8787, delegate: statusBarController)
         httpServer.wsDelegate = statusBarController
         httpServer.start()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            self.statusBarController.showAndroidSetupIfNeeded()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

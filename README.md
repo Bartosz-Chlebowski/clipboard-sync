@@ -1,11 +1,12 @@
 # Clipboard Sync
 
-Clipboard Sync is an experimental local LAN tool for syncing clipboard text
-between an Android device and a macOS menu bar app.
+Clipboard Sync is an experimental local LAN clipboard bridge between a macOS
+menu bar app and an Android phone.
 
-It is intended for source-based testing from GitHub, not for App Store,
-Google Play, Developer ID, or notarized binary distribution by the upstream
-author.
+The GitHub release is Mac-first: install the DMG on macOS, then use the Mac
+onboarding launcher to install and configure the Android app automatically over
+USB. The Android APK is published as a release asset, but users do not need to
+install it manually during the normal setup flow.
 
 ## Status
 
@@ -15,6 +16,28 @@ author.
 - Android can discover the Mac automatically or use a manual `ws://.../ws`
   URL.
 - Security and pairing flows are incomplete; see [SECURITY.md](SECURITY.md).
+
+## GitHub Install Flow
+
+The latest GitHub release publishes two files:
+
+- `ClipboardSyncMac.dmg` - the file users install on the Mac.
+- `ClipboardSyncAndroid.apk` - used by the Mac onboarding launcher, and also
+  available for manual recovery.
+
+Normal setup:
+
+1. Download and install `ClipboardSyncMac.dmg` on the Mac.
+2. Open Clipboard Sync from the macOS menu bar and start Android onboarding.
+3. Connect the Android phone with a USB data cable.
+4. Approve Android USB debugging prompts on the phone.
+5. The Mac launcher downloads `ClipboardSyncAndroid.apk` from the latest GitHub
+   release, installs or updates it through ADB, opens the Android app, starts
+   Shizuku where possible, and grants the clipboard app-op.
+
+Android Platform Tools must be available on the Mac (`adb` on PATH, Android
+Studio SDK, or `brew install android-platform-tools`). The Android APK should
+only be installed manually if the automated onboarding path fails.
 
 ## Requirements
 

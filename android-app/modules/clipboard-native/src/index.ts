@@ -53,6 +53,10 @@ export function requestShizukuPermission(): Promise<boolean> {
   return native.requestShizukuPermission();
 }
 
+export function openShizuku(): Promise<boolean> {
+  return native.openShizuku();
+}
+
 export function isIgnoringBatteryOptimizations(): Promise<boolean> {
   return native.isIgnoringBatteryOptimizations();
 }
