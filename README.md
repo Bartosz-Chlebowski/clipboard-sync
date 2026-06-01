@@ -15,7 +15,8 @@ install it manually during the normal setup flow.
 - macOS advertises `_clipboard-sync._tcp` with Bonjour/mDNS.
 - Android can discover the Mac automatically or use a manual `ws://.../ws`
   URL.
-- Security and pairing flows are incomplete; see [SECURITY.md](SECURITY.md).
+- Designed for trusted local networks; see [SECURITY.md](SECURITY.md) for the
+  security model and roadmap.
 
 ## GitHub Install Flow
 
