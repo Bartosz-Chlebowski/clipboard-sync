@@ -6,3 +6,4 @@ export const STORAGE_KEY_MAC_ADDRESS = '@clipboard_sync/mac_address';
 export const REQUEST_TIMEOUT_MS = 5000;
 
 export const STORAGE_KEY_WS_URL = '@clipboard_sync/ws_url';
+export const STORAGE_KEY_ONBOARDING_COMPLETE = '@clipboard_sync/onboarding_complete';

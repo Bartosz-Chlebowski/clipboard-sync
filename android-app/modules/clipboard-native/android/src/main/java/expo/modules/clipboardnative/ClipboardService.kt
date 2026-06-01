@@ -88,7 +88,7 @@ class ClipboardService : Service() {
             if (text.isEmpty() || text == lastKnownText) return
             Log.d(TAG, "Clipboard changed: ${text.length} chars")
             lastKnownText = text
-            onClipboardChanged?.invoke(text)
+            emitClipboardChanged(text)
             sendClipboardToMac(text)
         } catch (e: Exception) {
             Log.e(TAG, "Clipboard read error", e)
@@ -115,8 +115,8 @@ class ClipboardService : Service() {
         wsConnected = false
         sessionKey = null
 
-        onWsStatusChanged?.invoke("connecting")
-        onDiscoveryStatusChanged?.invoke("searching", null)
+        emitWsStatus("connecting")
+        emitDiscoveryStatus("searching", null)
         Log.d(TAG, "Discovering Mac service")
 
         discoveryJob = scope.launch(Dispatchers.IO) {
@@ -128,14 +128,14 @@ class ClipboardService : Service() {
                 if (discoveredUrl != null) {
                     currentWsUrl = discoveredUrl
                     getPrefs().edit().putString(PREF_WS_URL, discoveredUrl).apply()
-                    onDiscoveryStatusChanged?.invoke("found", discoveredUrl)
+                    emitDiscoveryStatus("found", discoveredUrl)
                     updateNotification()
                 } else {
-                    onDiscoveryStatusChanged?.invoke("not_found", null)
+                    emitDiscoveryStatus("not_found", null)
                 }
 
                 if (nextUrl.isNullOrBlank()) {
-                    onWsStatusChanged?.invoke("reconnecting")
+                    emitWsStatus("reconnecting")
                     scheduleReconnect(discoverFirst = true)
                     return@withContext
                 }
@@ -161,7 +161,7 @@ class ClipboardService : Service() {
                 .build()
         }
 
-        onWsStatusChanged?.invoke("connecting")
+        emitWsStatus("connecting")
         Log.d(TAG, "WS connecting to $url")
 
         val request = Request.Builder().url(url).build()
@@ -189,7 +189,7 @@ class ClipboardService : Service() {
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WS failure: ${t.message}")
                 wsConnected = false
-                onWsStatusChanged?.invoke("reconnecting")
+                emitWsStatus("reconnecting")
                 scheduleReconnect(discoverFirst = true)
             }
 
@@ -197,10 +197,10 @@ class ClipboardService : Service() {
                 Log.d(TAG, "WS closed $code")
                 wsConnected = false
                 if (code != 1000) {
-                    onWsStatusChanged?.invoke("reconnecting")
+                    emitWsStatus("reconnecting")
                     scheduleReconnect(discoverFirst = true)
                 } else {
-                    onWsStatusChanged?.invoke("disconnected")
+                    emitWsStatus("disconnected")
                 }
             }
         })
@@ -225,7 +225,7 @@ class ClipboardService : Service() {
             when (json.optString("type")) {
                 "hello_ack" -> {
                     wsConnected = true
-                    onWsStatusChanged?.invoke("connected")
+                    emitWsStatus("connected")
                     Log.d(TAG, "WS connected (hello_ack)")
                 }
                 "ping" -> {
@@ -240,7 +240,7 @@ class ClipboardService : Service() {
                         Log.d(TAG, "Received encrypted clipboard from Mac: ${text.length} chars")
                         lastKnownText = text  // prevent echo
                         setLocalClipboard(text)
-                        onClipboardReceived?.invoke(text)
+                        emitClipboardReceived(text)
                     }
                 }
             }
@@ -279,6 +279,42 @@ class ClipboardService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Set clipboard failed", e)
         }
+    }
+
+    private fun emitClipboardChanged(text: String) {
+        onClipboardChanged?.invoke(text)
+        sendServiceEvent(ACTION_CLIPBOARD_CHANGE) {
+            putExtra(EXTRA_TEXT, text)
+        }
+    }
+
+    private fun emitClipboardReceived(text: String) {
+        onClipboardReceived?.invoke(text)
+        sendServiceEvent(ACTION_CLIPBOARD_RECEIVED) {
+            putExtra(EXTRA_TEXT, text)
+        }
+    }
+
+    private fun emitWsStatus(status: String) {
+        onWsStatusChanged?.invoke(status)
+        sendServiceEvent(ACTION_WS_STATUS) {
+            putExtra(EXTRA_STATUS, status)
+        }
+    }
+
+    private fun emitDiscoveryStatus(status: String, url: String?) {
+        onDiscoveryStatusChanged?.invoke(status, url)
+        sendServiceEvent(ACTION_DISCOVERY_STATUS) {
+            putExtra(EXTRA_STATUS, status)
+            putExtra(EXTRA_URL, url)
+        }
+    }
+
+    private fun sendServiceEvent(action: String, extras: Intent.() -> Unit) {
+        sendBroadcast(Intent(action).apply {
+            setPackage(packageName)
+            extras()
+        })
     }
 
     fun sendClipboardNow(text: String): Boolean {
@@ -486,6 +522,14 @@ class ClipboardService : Service() {
         const val PREF_DEVICE_NAME = "device_name"
         const val DEFAULT_DEVICE_ID = "samsung-s23-plus"
         const val DEFAULT_DEVICE_NAME = "Android"
+
+        const val ACTION_CLIPBOARD_CHANGE = "expo.modules.clipboardnative.CLIPBOARD_CHANGE"
+        const val ACTION_CLIPBOARD_RECEIVED = "expo.modules.clipboardnative.CLIPBOARD_RECEIVED"
+        const val ACTION_WS_STATUS = "expo.modules.clipboardnative.WS_STATUS"
+        const val ACTION_DISCOVERY_STATUS = "expo.modules.clipboardnative.DISCOVERY_STATUS"
+        const val EXTRA_TEXT = "text"
+        const val EXTRA_STATUS = "status"
+        const val EXTRA_URL = "url"
 
         @Volatile var isRunning = false
         @Volatile var wsConnected = false

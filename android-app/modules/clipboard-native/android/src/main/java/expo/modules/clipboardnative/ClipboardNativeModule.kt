@@ -1,10 +1,12 @@
 package expo.modules.clipboardnative
 
 import android.app.AppOpsManager
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
@@ -20,6 +22,7 @@ import rikka.shizuku.Shizuku
 
 class ClipboardNativeModule : Module() {
     private val shizukuPermissionRequestCode = 2107
+    private var serviceEventsReceiver: BroadcastReceiver? = null
 
     override fun definition() = ModuleDefinition {
         Name("ClipboardNative")
@@ -27,6 +30,8 @@ class ClipboardNativeModule : Module() {
         Events("clipboardChange", "clipboardReceived", "wsStatus", "discoveryStatus")
 
         OnCreate {
+            registerServiceEventsReceiver()
+
             // Wire callbacks for when service is already running after process restart
             ClipboardService.onClipboardChanged = { text ->
                 sendEvent("clipboardChange", mapOf("text" to text))
@@ -55,6 +60,7 @@ class ClipboardNativeModule : Module() {
             ClipboardService.onWsStatusChanged = null
             ClipboardService.onClipboardReceived = null
             ClipboardService.onDiscoveryStatusChanged = null
+            unregisterServiceEventsReceiver()
         }
 
         AsyncFunction("getClipboardText") {
@@ -176,6 +182,38 @@ class ClipboardNativeModule : Module() {
             false
         }
 
+        AsyncFunction("openShizuku") {
+            val ctx = appContext.reactContext ?: return@AsyncFunction false
+            val shizukuPackage = "moe.shizuku.privileged.api"
+            val launchIntent = ctx.packageManager.getLaunchIntentForPackage(shizukuPackage)
+            if (launchIntent != null) {
+                launchIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                ctx.startActivity(launchIntent)
+                return@AsyncFunction true
+            }
+
+            val marketIntent = Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse("market://details?id=$shizukuPackage"),
+            ).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+
+            try {
+                ctx.startActivity(marketIntent)
+                true
+            } catch (_: Throwable) {
+                val webIntent = Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse("https://play.google.com/store/apps/details?id=$shizukuPackage"),
+                ).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                try {
+                    ctx.startActivity(webIntent)
+                    true
+                } catch (_: Throwable) {
+                    false
+                }
+            }
+        }
+
         AsyncFunction("isIgnoringBatteryOptimizations") {
             appContext.reactContext?.let { ctx ->
                 val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -191,6 +229,64 @@ class ClipboardNativeModule : Module() {
                 ).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
                 ctx.startActivity(intent)
             }
+        }
+    }
+
+    private fun registerServiceEventsReceiver() {
+        val ctx = appContext.reactContext ?: return
+        if (serviceEventsReceiver != null) return
+
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                when (intent.action) {
+                    ClipboardService.ACTION_CLIPBOARD_CHANGE -> {
+                        val text = intent.getStringExtra(ClipboardService.EXTRA_TEXT) ?: return
+                        sendEvent("clipboardChange", mapOf("text" to text))
+                    }
+                    ClipboardService.ACTION_CLIPBOARD_RECEIVED -> {
+                        val text = intent.getStringExtra(ClipboardService.EXTRA_TEXT) ?: return
+                        sendEvent("clipboardReceived", mapOf("text" to text))
+                    }
+                    ClipboardService.ACTION_WS_STATUS -> {
+                        val status = intent.getStringExtra(ClipboardService.EXTRA_STATUS) ?: return
+                        sendEvent("wsStatus", mapOf("status" to status))
+                    }
+                    ClipboardService.ACTION_DISCOVERY_STATUS -> {
+                        val status = intent.getStringExtra(ClipboardService.EXTRA_STATUS) ?: return
+                        sendEvent(
+                            "discoveryStatus",
+                            mapOf(
+                                "status" to status,
+                                "url" to intent.getStringExtra(ClipboardService.EXTRA_URL),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+        val filter = IntentFilter().apply {
+            addAction(ClipboardService.ACTION_CLIPBOARD_CHANGE)
+            addAction(ClipboardService.ACTION_CLIPBOARD_RECEIVED)
+            addAction(ClipboardService.ACTION_WS_STATUS)
+            addAction(ClipboardService.ACTION_DISCOVERY_STATUS)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ctx.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            ctx.registerReceiver(receiver, filter)
+        }
+        serviceEventsReceiver = receiver
+    }
+
+    private fun unregisterServiceEventsReceiver() {
+        val receiver = serviceEventsReceiver ?: return
+        serviceEventsReceiver = null
+        try {
+            appContext.reactContext?.unregisterReceiver(receiver)
+        } catch (_: IllegalArgumentException) {
+            // Receiver was already unregistered by the Android runtime.
         }
     }
 }
