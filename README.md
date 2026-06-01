@@ -16,6 +16,18 @@ author.
   URL.
 - Security and pairing flows are incomplete; see [SECURITY.md](SECURITY.md).
 
+## GitHub Install Flow
+
+GitHub releases publish two files:
+
+- `ClipboardSyncMac.dmg` - install this on the Mac.
+- `ClipboardSyncAndroid.apk` - downloaded by the Mac onboarding launcher when
+  an Android phone is connected.
+
+Users should install only the DMG. During Android onboarding, connect the phone
+with USB, approve Android debugging prompts, and the Mac app installs or updates
+the Android APK automatically through ADB.
+
 ## Requirements
 
 - Node.js `>=20.19.4` and npm `>=10`.

@@ -1,6 +1,9 @@
 import AppKit
 
 final class AndroidSetupWindowController: NSWindowController {
+    private static let clipboardSyncAPKAssetName = "ClipboardSyncAndroid.apk"
+    private static let clipboardSyncAPKDownloadURL = URL(string: "https://github.com/Bartosz-Chlebowski/clipboard-sync/releases/latest/download/ClipboardSyncAndroid.apk")!
+
     private enum SetupMode: Int, CaseIterable {
         case usb
         case wireless
@@ -932,9 +935,12 @@ final class AndroidSetupWindowController: NSWindowController {
 
         var candidates: [URL] = []
         if let resourceURL = Bundle.main.resourceURL {
+            candidates.append(resourceURL.appendingPathComponent(Self.clipboardSyncAPKAssetName))
             candidates.append(resourceURL.appendingPathComponent("app-debug.apk"))
         }
+        candidates.append(repoRoot.appendingPathComponent("dist/\(Self.clipboardSyncAPKAssetName)"))
         candidates.append(repoRoot.appendingPathComponent("android-app/android/app/build/outputs/apk/debug/app-debug.apk"))
+        candidates.append(currentDirectory.appendingPathComponent("dist/\(Self.clipboardSyncAPKAssetName)").standardizedFileURL)
         candidates.append(currentDirectory.appendingPathComponent("../android-app/android/app/build/outputs/apk/debug/app-debug.apk").standardizedFileURL)
         candidates.append(currentDirectory.appendingPathComponent("android-app/android/app/build/outputs/apk/debug/app-debug.apk").standardizedFileURL)
 
@@ -943,7 +949,8 @@ final class AndroidSetupWindowController: NSWindowController {
             return candidate
         }
 
-        throw SetupError.message("Clipboard Sync Android APK was not found. Build the debug APK once, then run setup again.")
+        appendLog("Clipboard Sync APK was not found locally. Downloading from GitHub Releases.")
+        return try downloadClipboardSyncAPK()
     }
 
     private func startShizuku(adb: String) throws -> String {
@@ -999,6 +1006,20 @@ final class AndroidSetupWindowController: NSWindowController {
         let targetURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("Shizuku-\(UUID().uuidString).apk")
         try apkData.write(to: targetURL)
+        return targetURL
+    }
+
+    private func downloadClipboardSyncAPK() throws -> URL {
+        let apkRemoteURL = Self.clipboardSyncAPKDownloadURL
+        appendLog("Downloading \(apkRemoteURL.absoluteString)")
+        let apkData = try blockingDownload(apkRemoteURL)
+        guard apkData.count > 1_000_000 else {
+            throw SetupError.message("Downloaded Clipboard Sync APK was unexpectedly small.")
+        }
+
+        let targetURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ClipboardSync-\(UUID().uuidString).apk")
+        try apkData.write(to: targetURL, options: .atomic)
         return targetURL
     }
 
