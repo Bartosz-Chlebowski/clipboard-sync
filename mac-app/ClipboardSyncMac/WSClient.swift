@@ -47,6 +47,80 @@ enum MessageCrypto {
     }
 }
 
+enum MacPairingIdentity {
+    private static let defaultsKey = "clipboardSyncMacSigningIdentityV1"
+
+    private static var privateKey: P256.Signing.PrivateKey {
+        if
+            let encoded = UserDefaults.standard.string(forKey: defaultsKey),
+            let data = Data(base64Encoded: encoded),
+            let key = try? P256.Signing.PrivateKey(rawRepresentation: data)
+        {
+            return key
+        }
+
+        let key = P256.Signing.PrivateKey()
+        UserDefaults.standard.set(key.rawRepresentation.base64EncodedString(), forKey: defaultsKey)
+        return key
+    }
+
+    static var publicKeyData: Data {
+        privateKey.publicKey.derRepresentation
+    }
+
+    static var publicKeyBase64: String {
+        publicKeyData.base64EncodedString()
+    }
+
+    static var fingerprint: String {
+        SHA256.hash(data: publicKeyData)
+            .map { String(format: "%02X", $0) }
+            .joined()
+    }
+
+    static var displayFingerprint: String {
+        fingerprint.chunked(every: 4).joined(separator: " ")
+    }
+
+    static func handshakeTranscript(
+        clientPublicKeyBase64: String,
+        serverPublicKeyBase64: String,
+        identityPublicKeyBase64: String
+    ) -> Data {
+        Data(
+            ("ClipboardSyncPairingV1\n" +
+             "clientPublicKey=\(clientPublicKeyBase64)\n" +
+             "serverPublicKey=\(serverPublicKeyBase64)\n" +
+             "identityPublicKey=\(identityPublicKeyBase64)").utf8
+        )
+    }
+
+    static func signHandshake(clientPublicKeyBase64: String, serverPublicKeyBase64: String) -> String? {
+        let identityPublicKeyBase64 = publicKeyBase64
+        let transcript = handshakeTranscript(
+            clientPublicKeyBase64: clientPublicKeyBase64,
+            serverPublicKeyBase64: serverPublicKeyBase64,
+            identityPublicKeyBase64: identityPublicKeyBase64
+        )
+        guard let signature = try? privateKey.signature(for: transcript) else { return nil }
+        return signature.derRepresentation.base64EncodedString()
+    }
+}
+
+private extension String {
+    func chunked(every size: Int) -> [String] {
+        guard size > 0 else { return [self] }
+        var chunks: [String] = []
+        var index = startIndex
+        while index < endIndex {
+            let next = self.index(index, offsetBy: size, limitedBy: endIndex) ?? endIndex
+            chunks.append(String(self[index..<next]))
+            index = next
+        }
+        return chunks
+    }
+}
+
 private enum WSOp: UInt8 {
     case continuation = 0x0
     case text         = 0x1
@@ -165,7 +239,14 @@ final class WSClient {
         }
 
         let privateKey = P256.KeyAgreement.PrivateKey()
-        guard let key = MessageCrypto.deriveSessionKey(privateKey: privateKey, remotePublicKey: remotePublicKey) else {
+        let serverPublicKeyBase64 = privateKey.publicKey.derRepresentation.base64EncodedString()
+        guard
+            let key = MessageCrypto.deriveSessionKey(privateKey: privateKey, remotePublicKey: remotePublicKey),
+            let signature = MacPairingIdentity.signHandshake(
+                clientPublicKeyBase64: publicKeyBase64,
+                serverPublicKeyBase64: serverPublicKeyBase64
+            )
+        else {
             print("[\(ts())] Failed WS session key derivation for \(remoteIP)")
             disconnect()
             return
@@ -174,11 +255,15 @@ final class WSClient {
         sessionKey = key
         sendPlainJSON([
             "type": "key_exchange_ack",
-            "version": 1,
+            "version": 2,
             "alg": "P-256-ECDH+HKDF-SHA256",
-            "publicKey": privateKey.publicKey.derRepresentation.base64EncodedString()
+            "publicKey": serverPublicKeyBase64,
+            "identityAlg": "P-256-ECDSA-SHA256",
+            "identityPublicKey": MacPairingIdentity.publicKeyBase64,
+            "identityFingerprint": MacPairingIdentity.fingerprint,
+            "signature": signature
         ])
-        print("[\(ts())] WS session key established with \(remoteIP)")
+        print("[\(ts())] WS session key established with \(remoteIP) [macFingerprint=\(MacPairingIdentity.displayFingerprint)]")
     }
 
     private func handleMessage(type: String, json: [String: Any]) {

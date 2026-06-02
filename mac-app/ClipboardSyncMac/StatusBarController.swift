@@ -15,6 +15,7 @@ class StatusBarController: NSObject, HTTPServerDelegate, WSServerDelegate {
     private var addressItem: NSMenuItem!
     private var copyAddressItem: NSMenuItem!
     private var encryptionItem: NSMenuItem!
+    private var pairingItem: NSMenuItem!
     private var androidSetupWindow: AndroidSetupWindowController?
 
     override init() {
@@ -79,9 +80,14 @@ class StatusBarController: NSObject, HTTPServerDelegate, WSServerDelegate {
         copyAddressItem.target = self
         menu.addItem(copyAddressItem)
 
-        encryptionItem = NSMenuItem(title: "Encryption: AES-256-GCM", action: nil, keyEquivalent: "")
+        encryptionItem = NSMenuItem(title: "Encryption: AES-256-GCM + signed pairing", action: nil, keyEquivalent: "")
         encryptionItem.isEnabled = false
         menu.addItem(encryptionItem)
+
+        pairingItem = NSMenuItem(title: "Pairing fingerprint: \(Self.shortFingerprint())", action: nil, keyEquivalent: "")
+        pairingItem.toolTip = MacPairingIdentity.displayFingerprint
+        pairingItem.isEnabled = false
+        menu.addItem(pairingItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -206,6 +212,12 @@ class StatusBarController: NSObject, HTTPServerDelegate, WSServerDelegate {
 
     private static func deviceCountTitle(_ count: Int) -> String {
         count == 1 ? "1 device connected" : "\(count) devices connected"
+    }
+
+    private static func shortFingerprint() -> String {
+        let fingerprint = MacPairingIdentity.fingerprint
+        guard fingerprint.count > 12 else { return fingerprint }
+        return "\(fingerprint.prefix(12))..."
     }
 
     // MARK: - HTTPServerDelegate

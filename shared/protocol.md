@@ -15,6 +15,8 @@ Application payloads are encrypted before they are written to the socket. The We
 - Algorithm: AES-256-GCM
 - Session key agreement: automatic P-256 ECDH during WebSocket connection
 - Key derivation: HKDF-SHA256 with salt `ClipboardSyncSessionV1`
+- Mac authentication: persistent P-256 ECDSA identity signs the ECDH transcript
+- Android trust: pinned SHA-256 fingerprint of the Mac identity public key
 - Wire format: JSON encrypted envelope
 
 Initial key exchange messages are the only plaintext WebSocket application frames:
@@ -31,11 +33,29 @@ Initial key exchange messages are the only plaintext WebSocket application frame
 ```json
 {
   "type": "key_exchange_ack",
-  "version": 1,
+  "version": 2,
   "alg": "P-256-ECDH+HKDF-SHA256",
-  "publicKey": "base64(x509-der-public-key)"
+  "publicKey": "base64(x509-der-ephemeral-public-key)",
+  "identityAlg": "P-256-ECDSA-SHA256",
+  "identityPublicKey": "base64(x509-der-mac-signing-public-key)",
+  "identityFingerprint": "hex(sha256(identityPublicKey))",
+  "signature": "base64(der-ecdsa-signature)"
 }
 ```
+
+The Mac signs this UTF-8 transcript exactly:
+
+```text
+ClipboardSyncPairingV1
+clientPublicKey=<Android key_exchange publicKey>
+serverPublicKey=<Mac key_exchange_ack publicKey>
+identityPublicKey=<Mac identityPublicKey>
+```
+
+Android verifies the signature before deriving the session key. If no Mac
+fingerprint is stored yet, Android stores the first verified Mac identity. In
+the normal public install flow the Mac sets that fingerprint over USB onboarding
+before the first network sync.
 
 After that, all logical messages use the encrypted envelope:
 
@@ -69,7 +89,10 @@ Content-Type: application/json
 
 Clipboard payloads and application-level WebSocket messages are encrypted and authenticated with AES-GCM. Messages that cannot be decrypted with the negotiated session key are rejected.
 
-This is not a complete pairing or trust model. The current ECDH exchange protects the session from passive plaintext capture, but it does not authenticate the peer before the first connection. A malicious device on the same LAN could still attempt MITM or unauthorized pairing until QR/PIN pairing, key pinning, a trusted-device store, and revocation are implemented.
+The Mac side of the session is authenticated with a signed ECDH transcript and
+an Android-pinned Mac identity fingerprint. Remaining gaps are Android identity
+pinning on the Mac side, revocation/reset UI, and QR/PIN comparison for fully
+manual first pairing.
 
 ## Notes
 

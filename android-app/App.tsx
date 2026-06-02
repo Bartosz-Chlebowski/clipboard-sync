@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   AppState,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -25,7 +26,9 @@ import {
   addClipboardReceivedListener,
   addDiscoveryStatusListener,
   discoverMacWsUrl,
+  getTrustedMacFingerprint,
   startClipboardService,
+  setTrustedMacFingerprint,
   type WsStatus,
   type ShizukuStatus,
   type DiscoveryStatus,
@@ -78,11 +81,32 @@ function formatTime(d: Date): string {
   return d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+function queryParam(url: string, name: string): string | null {
+  const queryStart = url.indexOf('?');
+  if (queryStart < 0) return null;
+  const query = url.slice(queryStart + 1);
+  for (const part of query.split('&')) {
+    const [rawKey, rawValue = ''] = part.split('=');
+    if (decodeURIComponent(rawKey.replace(/\+/g, ' ')) === name) {
+      return decodeURIComponent(rawValue.replace(/\+/g, ' '));
+    }
+  }
+  return null;
+}
+
+function formatFingerprint(fingerprint: string | null): string {
+  if (!fingerprint) return 'Not paired yet';
+  const compact = fingerprint.replace(/[^0-9A-F]/gi, '').toUpperCase();
+  if (compact.length < 16) return compact;
+  return `${compact.slice(0, 4)} ${compact.slice(4, 8)} ${compact.slice(8, 12)} ${compact.slice(12, 16)}...`;
+}
+
 const WS_STATUS_TONE: Record<WsStatus, Tone> = {
   connected: 'ok',
   connecting: 'warn',
   reconnecting: 'warn',
   disconnected: 'error',
+  untrusted: 'error',
 };
 
 const WS_STATUS_LABEL: Record<WsStatus, string> = {
@@ -90,6 +114,7 @@ const WS_STATUS_LABEL: Record<WsStatus, string> = {
   connecting: 'Connecting',
   reconnecting: 'Reconnecting',
   disconnected: 'Disconnected',
+  untrusted: 'Untrusted Mac',
 };
 
 const SHIZUKU_UID_LABEL: Record<number, string> = {
@@ -218,6 +243,7 @@ export default function App() {
   const [shizukuStatus, setShizukuStatus] = useState<ShizukuStatus | null>(null);
   const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus>('idle');
   const [macDeviceName, setMacDeviceName] = useState<string | null>(null);
+  const [trustedMacFingerprint, setTrustedMacFingerprintState] = useState<string | null>(null);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [setupMessage, setSetupMessage] = useState<string | null>(null);
   const appState = useRef(AppState.currentState);
@@ -227,15 +253,47 @@ export default function App() {
 
   // Load saved setup state on mount
   useEffect(() => {
-    Promise.all([getWsUrl(), getOnboardingComplete()]).then(([url, onboardingComplete]) => {
-      setWsUrl(url);
-      setWsUrlDraft(url ?? '');
-      setOnboardingVisible(!onboardingComplete);
-      if (!url) {
-        void handleDiscoverMac();
-      }
-    });
+    Promise.all([getWsUrl(), getOnboardingComplete(), getTrustedMacFingerprint()]).then(
+      ([url, onboardingComplete, fingerprint]) => {
+        setWsUrl(url);
+        setWsUrlDraft(url ?? '');
+        setTrustedMacFingerprintState(fingerprint);
+        setOnboardingVisible(!onboardingComplete);
+        if (!url) {
+          void handleDiscoverMac();
+        }
+      },
+    );
   }, []);
+
+  const handlePairingLink = useCallback(async (url: string | null) => {
+    if (!url?.startsWith('exp+clipboard-sync://')) return;
+
+    const fingerprint = queryParam(url, 'macFingerprint');
+    if (fingerprint) {
+      const saved = await setTrustedMacFingerprint(fingerprint);
+      if (saved) {
+        const current = await getTrustedMacFingerprint();
+        setTrustedMacFingerprintState(current);
+        setSetupMessage('Paired with this Mac.');
+      }
+    }
+
+    const pairedWsUrl = queryParam(url, 'wsUrl');
+    if (pairedWsUrl) {
+      await saveWsUrl(pairedWsUrl);
+      setWsUrl(pairedWsUrl);
+      setWsUrlDraft(pairedWsUrl);
+    }
+  }, []);
+
+  useEffect(() => {
+    void Linking.getInitialURL().then(handlePairingLink);
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      void handlePairingLink(url);
+    });
+    return () => sub.remove();
+  }, [handlePairingLink]);
 
   // Listen to native WS status events
   useEffect(() => {
@@ -288,6 +346,7 @@ export default function App() {
     try {
       setPrivilegedClipboard(await isReadClipboardAllowed());
       setShizukuStatus(await getShizukuStatus());
+      setTrustedMacFingerprintState(await getTrustedMacFingerprint());
     } catch {
       setPrivilegedClipboard(false);
       setShizukuStatus(null);
@@ -441,6 +500,7 @@ export default function App() {
       ? `Authorization active (${shizukuUidLabel})`
       : 'Authorization required';
   const clipboardAccessReady = Boolean(shizukuStatus?.permissionGranted || privilegedClipboard);
+  const pairingReady = Boolean(trustedMacFingerprint);
   const clipboardAccessLabel = shizukuStatus?.permissionGranted
     ? 'Clipboard will be read through Shizuku'
     : privilegedClipboard
@@ -470,7 +530,7 @@ export default function App() {
         ? 'Looking for Mac'
         : 'Connection required';
   const macReady = Boolean(wsUrl);
-  const androidSetupReady = macReady && clipboardAccessReady;
+  const androidSetupReady = macReady && pairingReady && clipboardAccessReady;
   const onboardingStepBusy = discoveryStatus === 'searching';
   const onboardingNextDisabled = !androidSetupReady;
   const onboardingStepTone: Tone = androidSetupReady
@@ -502,7 +562,7 @@ export default function App() {
                   key={step}
                   style={[
                     styles.onboardingProgressSegment,
-                    (step === 0 || (step === 1 && macReady) || (step === 2 && androidSetupReady)) &&
+                    (step === 0 || (step === 1 && macReady && pairingReady) || (step === 2 && androidSetupReady)) &&
                       styles.onboardingProgressSegmentActive,
                   ]}
                 />
@@ -521,7 +581,7 @@ export default function App() {
               <Text style={styles.onboardingFullTitle}>Start with a USB cable</Text>
               <Text style={styles.onboardingFullText}>
                 For the first install, plug this phone into the Mac and keep this screen open.
-                The Mac handles the install, Shizuku, and clipboard access.
+                The Mac handles the install, pairing, Shizuku, and clipboard access.
               </Text>
 
               {wsUrlDraft ? (
@@ -534,10 +594,10 @@ export default function App() {
                 <SetupInstruction
                   index={1}
                   title="Plug in by USB"
-                  detail="Use a data cable and accept the Android debugging prompt."
+                  detail="Use a data cable and accept the Android debugging prompt. The Mac pairs this phone automatically."
                   badge="Recommended"
-                  done={macReady}
-                  active={!macReady}
+                  done={macReady && pairingReady}
+                  active={!macReady || !pairingReady}
                 />
                 <SetupInstruction
                   index={2}
@@ -567,6 +627,11 @@ export default function App() {
                   label="Mac app"
                   value={macReady ? 'Mac address saved' : discoveryLabel}
                   tone={macReady ? 'ok' : discoveryTone}
+                />
+                <SignalRow
+                  label="Pairing"
+                  value={formatFingerprint(trustedMacFingerprint)}
+                  tone={pairingReady ? 'ok' : 'warn'}
                 />
                 <SignalRow
                   label="Shizuku"
@@ -711,7 +776,16 @@ export default function App() {
                     actionLabel={discoveryStatus !== 'searching' ? 'Search' : undefined}
                     onAction={discoveryStatus !== 'searching' ? handleDiscoverMac : undefined}
                   />
-                  <SignalRow label="Encryption" value="Session negotiated automatically" tone="ok" />
+                  <SignalRow
+                    label="Pairing"
+                    value={formatFingerprint(trustedMacFingerprint)}
+                    tone={pairingReady ? 'ok' : 'warn'}
+                  />
+                  <SignalRow
+                    label="Encryption"
+                    value={pairingReady ? 'Signed session with paired Mac' : 'Waiting for Mac pairing'}
+                    tone={pairingReady ? 'ok' : 'warn'}
+                  />
                   <SignalRow
                     label="Shizuku"
                     value={shizukuLabel}

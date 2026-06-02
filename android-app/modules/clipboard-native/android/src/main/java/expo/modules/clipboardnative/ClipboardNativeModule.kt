@@ -120,6 +120,27 @@ class ClipboardNativeModule : Module() {
             ClipboardService.wsConnected
         }
 
+        AsyncFunction("getTrustedMacFingerprint") {
+            val ctx = appContext.reactContext ?: return@AsyncFunction null
+            ctx.getSharedPreferences(ClipboardService.PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(ClipboardService.PREF_TRUSTED_MAC_FINGERPRINT, null)
+        }
+
+        AsyncFunction("setTrustedMacFingerprint") { fingerprint: String? ->
+            val ctx = appContext.reactContext ?: return@AsyncFunction false
+            val normalized = ClipboardService.normalizeFingerprint(fingerprint)
+            val editor = ctx.getSharedPreferences(ClipboardService.PREFS_NAME, Context.MODE_PRIVATE).edit()
+            if (fingerprint == null) {
+                editor.remove(ClipboardService.PREF_TRUSTED_MAC_FINGERPRINT)
+                editor.apply()
+                return@AsyncFunction false
+            }
+            if (normalized == null) return@AsyncFunction false
+            editor.putString(ClipboardService.PREF_TRUSTED_MAC_FINGERPRINT, normalized)
+            editor.apply()
+            true
+        }
+
         AsyncFunction("discoverMacWsUrl") Coroutine { timeoutMs: Int? ->
             val ctx = appContext.reactContext ?: return@Coroutine null
             withContext(Dispatchers.IO) {

@@ -10,13 +10,14 @@ install it manually during the normal setup flow.
 
 ## Status
 
-- Public GitHub release for trusted local-network testing.
-- Clipboard data is transferred over an encrypted WebSocket on port `8787`.
+- Public GitHub release with Mac-first USB onboarding.
+- Clipboard data is transferred over a signed and encrypted WebSocket session on
+  port `8787`.
 - macOS advertises `_clipboard-sync._tcp` with Bonjour/mDNS.
 - Android can discover the Mac automatically or use a manual `ws://.../ws`
   URL.
-- Designed for trusted local networks; see [SECURITY.md](SECURITY.md) for the
-  security model and roadmap.
+- USB onboarding pairs Android with the Mac identity fingerprint before sync.
+  See [SECURITY.md](SECURITY.md) for the security model and remaining roadmap.
 
 ## GitHub Install Flow
 
@@ -34,7 +35,8 @@ Normal setup:
 4. Approve Android USB debugging prompts on the phone.
 5. The Mac launcher downloads `ClipboardSyncAndroid.apk` from the latest GitHub
    release, installs or updates it through ADB, opens the Android app, starts
-   Shizuku where possible, and grants the clipboard app-op.
+   Shizuku where possible, pairs Android with this Mac identity, and grants the
+   clipboard app-op.
 
 Android Platform Tools must be available on the Mac (`adb` on PATH, Android
 Studio SDK, or `brew install android-platform-tools`). The Android APK should
@@ -48,7 +50,7 @@ For the normal GitHub install flow:
 - Android phone with USB debugging enabled.
 - Android Platform Tools available on the Mac (`adb` on PATH, Android Studio
   SDK, or `brew install android-platform-tools`).
-- Both devices on the same trusted local network.
+- Both devices on the same local network, or a manual Mac WebSocket URL.
 
 For source builds:
 
@@ -176,17 +178,20 @@ Reference: [Android foreground service launch restrictions](https://developer.an
 ## Security Notes
 
 Clipboard payloads are encrypted with AES-256-GCM after a P-256 ECDH key
-exchange. Plain HTTP clipboard sync is disabled; HTTP is only kept for
-`GET /health`.
+exchange. The Mac also has a persistent P-256 signing identity. During
+onboarding Android stores the Mac identity fingerprint; every later WebSocket
+session must include a valid Mac signature and match that pinned fingerprint
+before encrypted clipboard messages are accepted.
 
-This does not yet authenticate peers. A malicious or unauthorized device on the
-same LAN may still attempt MITM or unauthorized pairing during discovery or
-first connection. Planned work:
+Plain HTTP clipboard sync is disabled; HTTP is only kept for `GET /health`.
 
-- QR or PIN pairing.
-- Device trust store.
-- Public key pinning.
-- Device revocation.
+Remaining security work:
+
+- QR or PIN comparison for fully manual first pairing without USB onboarding.
+- UI for viewing, resetting, and revoking paired devices.
+- Android device identity pinning if the Mac should also restrict which phones
+  may connect.
+- Developer ID signing and notarization for the Mac app.
 
 See [SECURITY.md](SECURITY.md) and [shared/protocol.md](shared/protocol.md).
 

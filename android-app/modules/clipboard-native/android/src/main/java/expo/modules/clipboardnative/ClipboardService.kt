@@ -16,12 +16,15 @@ import kotlinx.coroutines.*
 import okhttp3.*
 import okio.ByteString
 import org.json.JSONObject
+import java.security.MessageDigest
 import java.security.SecureRandom
+import java.security.Signature
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyFactory
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.X509EncodedKeySpec
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.crypto.Cipher
@@ -45,6 +48,8 @@ class ClipboardService : Service() {
     private var discoverBeforeNextConnect = false
     private var keyPair: KeyPair? = null
     private var sessionKey: SecretKeySpec? = null
+    private var localPublicKeyBase64: String? = null
+    private var pairingBlocked = false
 
     override fun onCreate() {
         super.onCreate()
@@ -60,6 +65,9 @@ class ClipboardService : Service() {
             getPrefs().edit().putString(PREF_WS_URL, urlFromIntent).apply()
         } else if (currentWsUrl == null) {
             currentWsUrl = getPrefs().getString(PREF_WS_URL, null)
+        }
+        intent?.getStringExtra(EXTRA_MAC_FINGERPRINT)?.let { fingerprint ->
+            saveTrustedMacFingerprint(fingerprint)
         }
         discoverBeforeNextConnect = currentWsUrl.isNullOrBlank()
 
@@ -114,6 +122,8 @@ class ClipboardService : Service() {
         webSocket = null
         wsConnected = false
         sessionKey = null
+        localPublicKeyBase64 = null
+        pairingBlocked = false
 
         emitWsStatus("connecting")
         emitDiscoveryStatus("searching", null)
@@ -151,6 +161,8 @@ class ClipboardService : Service() {
         webSocket = null
         wsConnected = false
         sessionKey = null
+        localPublicKeyBase64 = null
+        pairingBlocked = false
         keyPair = generateKeyPair()
 
         if (httpClient == null) {
@@ -174,11 +186,12 @@ class ClipboardService : Service() {
                     ws.close(1011, "key exchange unavailable")
                     return
                 }
+                localPublicKeyBase64 = Base64.encodeToString(publicKey, Base64.NO_WRAP)
                 ws.send(JSONObject().apply {
                     put("type", "key_exchange")
                     put("version", 1)
                     put("alg", "P-256-ECDH+HKDF-SHA256")
-                    put("publicKey", Base64.encodeToString(publicKey, Base64.NO_WRAP))
+                    put("publicKey", localPublicKeyBase64)
                 }.toString())
                 Log.d(TAG, "WS opened, key exchange sent")
             }
@@ -189,6 +202,10 @@ class ClipboardService : Service() {
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WS failure: ${t.message}")
                 wsConnected = false
+                if (pairingBlocked) {
+                    emitWsStatus("untrusted")
+                    return
+                }
                 emitWsStatus("reconnecting")
                 scheduleReconnect(discoverFirst = true)
             }
@@ -196,7 +213,9 @@ class ClipboardService : Service() {
             override fun onClosed(ws: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "WS closed $code")
                 wsConnected = false
-                if (code != 1000) {
+                if (pairingBlocked) {
+                    emitWsStatus("untrusted")
+                } else if (code != 1000) {
                     emitWsStatus("reconnecting")
                     scheduleReconnect(discoverFirst = true)
                 } else {
@@ -251,15 +270,43 @@ class ClipboardService : Service() {
 
     private fun handleKeyExchangeAck(json: JSONObject) {
         val remotePublicKey = json.optString("publicKey", "")
+        val identityPublicKey = json.optString("identityPublicKey", "")
+        val signature = json.optString("signature", "")
+        val localPublicKey = localPublicKeyBase64
         if (remotePublicKey.isBlank()) {
             Log.w(TAG, "Invalid key exchange ack")
             webSocket?.close(1002, "invalid key exchange")
             return
         }
+        if (identityPublicKey.isBlank() || signature.isBlank() || localPublicKey.isNullOrBlank()) {
+            rejectMacIdentity("missing signed pairing identity")
+            return
+        }
 
         try {
+            val macFingerprint = verifyMacIdentity(
+                identityPublicKeyBase64 = identityPublicKey,
+                signatureBase64 = signature,
+                clientPublicKeyBase64 = localPublicKey,
+                serverPublicKeyBase64 = remotePublicKey,
+            ) ?: run {
+                rejectMacIdentity("invalid pairing signature")
+                return
+            }
+
+            val trustedFingerprint = readTrustedMacFingerprint()
+            if (trustedFingerprint == null) {
+                saveTrustedMacFingerprint(macFingerprint)
+                Log.d(TAG, "Paired Mac identity ${formatFingerprint(macFingerprint)}")
+            } else if (trustedFingerprint != macFingerprint) {
+                rejectMacIdentity(
+                    "Mac fingerprint mismatch expected=${formatFingerprint(trustedFingerprint)} actual=${formatFingerprint(macFingerprint)}"
+                )
+                return
+            }
+
             sessionKey = deriveSessionKey(remotePublicKey)
-            Log.d(TAG, "WS session key established")
+            Log.d(TAG, "WS session key established with paired Mac ${formatFingerprint(macFingerprint)}")
             sendEncrypted(JSONObject().apply {
                 put("type", "hello")
                 put("sourceDeviceId", readDeviceId())
@@ -270,6 +317,57 @@ class ClipboardService : Service() {
             Log.e(TAG, "Key exchange failed", e)
             webSocket?.close(1011, "key exchange failed")
         }
+    }
+
+    private fun verifyMacIdentity(
+        identityPublicKeyBase64: String,
+        signatureBase64: String,
+        clientPublicKeyBase64: String,
+        serverPublicKeyBase64: String,
+    ): String? {
+        val identityBytes = try {
+            Base64.decode(identityPublicKeyBase64, Base64.NO_WRAP)
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+        val signatureBytes = try {
+            Base64.decode(signatureBase64, Base64.NO_WRAP)
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+        val identityKey = try {
+            KeyFactory.getInstance("EC").generatePublic(X509EncodedKeySpec(identityBytes))
+        } catch (_: Exception) {
+            return null
+        }
+
+        val transcript = pairingTranscript(
+            clientPublicKeyBase64 = clientPublicKeyBase64,
+            serverPublicKeyBase64 = serverPublicKeyBase64,
+            identityPublicKeyBase64 = identityPublicKeyBase64,
+        )
+
+        val verified = try {
+            Signature.getInstance("SHA256withECDSA").run {
+                initVerify(identityKey)
+                update(transcript.toByteArray(Charsets.UTF_8))
+                verify(signatureBytes)
+            }
+        } catch (_: Exception) {
+            false
+        }
+        if (!verified) return null
+
+        return fingerprintForIdentity(identityBytes)
+    }
+
+    private fun rejectMacIdentity(reason: String) {
+        Log.w(TAG, "Rejected Mac pairing identity: $reason")
+        pairingBlocked = true
+        wsConnected = false
+        sessionKey = null
+        emitWsStatus("untrusted")
+        webSocket?.close(1008, "untrusted Mac identity")
     }
 
     private fun setLocalClipboard(text: String) {
@@ -354,6 +452,18 @@ class ClipboardService : Service() {
         getPrefs().getString(PREF_DEVICE_ID, DEFAULT_DEVICE_ID) ?: DEFAULT_DEVICE_ID
 
     private fun getPrefs() = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private fun readTrustedMacFingerprint(): String? =
+        normalizeFingerprint(getPrefs().getString(PREF_TRUSTED_MAC_FINGERPRINT, null))
+
+    private fun saveTrustedMacFingerprint(fingerprint: String) {
+        val normalized = normalizeFingerprint(fingerprint)
+        if (normalized == null) {
+            Log.w(TAG, "Ignoring invalid Mac fingerprint")
+            return
+        }
+        getPrefs().edit().putString(PREF_TRUSTED_MAC_FINGERPRINT, normalized).apply()
+    }
 
     private fun sendEncrypted(message: JSONObject): Boolean {
         val ws = webSocket ?: return false
@@ -516,10 +626,12 @@ class ClipboardService : Service() {
         private val SESSION_SALT = "ClipboardSyncSessionV1".toByteArray(Charsets.UTF_8)
 
         const val EXTRA_WS_URL = "ws_url"
+        const val EXTRA_MAC_FINGERPRINT = "mac_fingerprint"
         const val PREFS_NAME = "clipboard_sync_prefs"
         const val PREF_WS_URL = "ws_url"
         const val PREF_DEVICE_ID = "device_id"
         const val PREF_DEVICE_NAME = "device_name"
+        const val PREF_TRUSTED_MAC_FINGERPRINT = "trusted_mac_fingerprint"
         const val DEFAULT_DEVICE_ID = "samsung-s23-plus"
         const val DEFAULT_DEVICE_NAME = "Android"
 
@@ -543,5 +655,30 @@ class ClipboardService : Service() {
 
         // Registered by the running service instance so the module can call it directly
         @Volatile var triggerSend: ((String) -> Unit)? = null
+
+        fun normalizeFingerprint(fingerprint: String?): String? {
+            val normalized = fingerprint
+                ?.uppercase(Locale.US)
+                ?.filter { it in '0'..'9' || it in 'A'..'F' }
+            return normalized?.takeIf { it.length == 64 }
+        }
+
+        fun formatFingerprint(fingerprint: String): String =
+            fingerprint.chunked(4).joinToString(" ")
+
+        private fun fingerprintForIdentity(identityBytes: ByteArray): String =
+            MessageDigest.getInstance("SHA-256")
+                .digest(identityBytes)
+                .joinToString("") { "%02X".format(it.toInt() and 0xff) }
+
+        private fun pairingTranscript(
+            clientPublicKeyBase64: String,
+            serverPublicKeyBase64: String,
+            identityPublicKeyBase64: String,
+        ): String =
+            "ClipboardSyncPairingV1\n" +
+                "clientPublicKey=$clientPublicKeyBase64\n" +
+                "serverPublicKey=$serverPublicKeyBase64\n" +
+                "identityPublicKey=$identityPublicKeyBase64"
     }
 }

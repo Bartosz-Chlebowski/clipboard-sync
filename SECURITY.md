@@ -9,22 +9,31 @@ as a hardened production security boundary.
   layer with AES-256-GCM.
 - Each WebSocket session negotiates a fresh key with P-256 ECDH and
   HKDF-SHA256.
+- The Mac app owns a persistent P-256 ECDSA signing identity. Its public-key
+  fingerprint is shown in the macOS menu bar.
+- USB onboarding stores that Mac fingerprint on Android. Android verifies the
+  signed key-exchange transcript and rejects sessions from a different Mac
+  identity.
 - Plain HTTP clipboard sync is disabled. HTTP is kept only for `GET /health`.
 
 ## Known risks
 
-The current implementation does not yet have a complete pairing and device
-trust model. A device on the same LAN may be able to impersonate the Mac or
-Android peer during discovery or first connection. This means LAN attackers,
-malicious hotspots, compromised routers, and unauthorized devices on the same
-network are still in scope for MITM or unauthorized pairing attacks.
+The Mac identity is pinned on Android, but the trust model is still intentionally
+small:
 
-Use this only on trusted local networks while testing.
+- The Mac does not yet pin Android device identities, so any phone that knows the
+  WebSocket URL can attempt to connect.
+- Manual first pairing without USB onboarding still needs a human comparison
+  flow. If Android has no stored fingerprint, it pins the first signed Mac
+  identity it sees.
+- Discovery still happens on the local network with Bonjour/mDNS. Networks that
+  block multicast may require a manual WebSocket URL.
+- The public GitHub DMG is ad-hoc signed and not notarized yet.
 
 ## Security roadmap
 
 - QR or PIN based pairing.
-- Persistent trusted-device store.
-- Public key pinning after pairing.
+- Paired-device management UI.
+- Android identity pinning on the Mac side.
 - Device revocation and reset flow.
-- Clear UI for currently trusted peers and active session identity.
+- Developer ID signing and notarization.

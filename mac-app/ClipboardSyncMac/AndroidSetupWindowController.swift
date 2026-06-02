@@ -87,7 +87,7 @@ final class AndroidSetupWindowController: NSWindowController {
             case .adb: return "Prepare the Mac"
             case .phone: return "Trust this Mac"
             case .shizuku: return "Start Shizuku"
-            case .authorization: return "Open Clipboard Sync"
+            case .authorization: return "Pair Clipboard Sync"
             case .permissions: return "Enable clipboard access"
             }
         }
@@ -106,7 +106,7 @@ final class AndroidSetupWindowController: NSWindowController {
             case .shizuku:
                 return "Installing Shizuku if needed, then starting its privileged service."
             case .authorization:
-                return "Installing or updating the Android app and opening it on the phone."
+                return "Installing or updating the Android app, then pairing it with this Mac identity."
             case .permissions:
                 return "Granting the Android clipboard app-op and leaving the app ready."
             }
@@ -740,10 +740,11 @@ final class AndroidSetupWindowController: NSWindowController {
                 let apkURL = try findClipboardSyncAPK()
                 _ = try run(adb, adbArguments(["install", "-r", apkURL.path]))
             }
-            _ = try run(adb, adbArguments(["shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"]))
+            updateCurrentStepMessage("Pairing Clipboard Sync with this Mac.")
+            try openClipboardSyncPairing(adb: adb)
             updateCurrentStepMessage("Approve the Shizuku permission prompt on the phone if Android shows one.")
             Thread.sleep(forTimeInterval: 8.0)
-            return "Clipboard Sync is installed and open on the phone."
+            return "Clipboard Sync is installed, paired, and open on the phone."
         case .permissions:
             let adb = try requireADB()
             _ = try run(adb, adbArguments(["shell", "pm", "path", packageName]))
@@ -981,6 +982,29 @@ final class AndroidSetupWindowController: NSWindowController {
             return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         } catch {
             return false
+        }
+    }
+
+    private func openClipboardSyncPairing(adb: String) throws {
+        let pairingURL = "exp+clipboard-sync://pair?macFingerprint=\(MacPairingIdentity.fingerprint)"
+        appendLog("Pairing Mac identity \(MacPairingIdentity.displayFingerprint)")
+        do {
+            _ = try run(adb, adbArguments([
+                "shell",
+                "am",
+                "start",
+                "-W",
+                "-a",
+                "android.intent.action.VIEW",
+                "-d",
+                pairingURL,
+                "-p",
+                packageName,
+            ]))
+        } catch {
+            appendLog("Pairing deep link failed; opening Clipboard Sync normally.")
+            _ = try run(adb, adbArguments(["shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"]))
+            throw error
         }
     }
 

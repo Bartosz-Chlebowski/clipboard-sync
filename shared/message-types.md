@@ -104,6 +104,7 @@ Client                          Server
 - `connecting` - TCP + WebSocket handshake in progress
 - `connected` - `hello_ack` received, ready to send
 - `reconnecting` - connection lost, waiting for backoff before retrying
+- `untrusted` - Mac signature failed or did not match the pinned fingerprint
 
 ### HTTP endpoints
 

@@ -10,7 +10,7 @@ Releases and installs it through ADB.
 - JDK 17.
 - Android Studio / Android SDK.
 - Android device with USB debugging for local install.
-- Same trusted Wi-Fi/LAN as the Mac app.
+- Same Wi-Fi/LAN as the Mac app, or a manual Mac WebSocket URL.
 - Shizuku or ADB app-op setup required by the native clipboard access path.
 
 ## Commands
@@ -61,8 +61,11 @@ dev-client dependency.
 
 ## Configuration
 
-After installing the Android app through the Mac onboarding launcher or a manual
-ADB install:
+The normal path is Mac-first: install the DMG, connect the phone over USB, and
+let the macOS onboarding launcher install the APK, open Android, pair the Mac
+fingerprint, start Shizuku where possible, and grant the clipboard app-op.
+
+For manual recovery after installing the Android app:
 
 1. Open **Settings**.
 2. Tap **Find Mac automatically** to discover `_clipboard-sync._tcp` over
@@ -71,8 +74,9 @@ ADB install:
    `ws://192.168.X.X:8787/ws` or `ws://macbook.local:8787/ws`.
 4. Tap **Save & Reconnect**.
 
-The WebSocket session negotiates a key with P-256 ECDH and encrypts application
-payloads with AES-256-GCM. Plain HTTP clipboard sync is disabled.
+The WebSocket session negotiates a key with P-256 ECDH, verifies the signed Mac
+identity against the pinned fingerprint, and encrypts application payloads with
+AES-256-GCM. Plain HTTP clipboard sync is disabled.
 
 ## Background Sync
 

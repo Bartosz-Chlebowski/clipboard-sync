@@ -26,6 +26,14 @@ export function isWsConnected(): Promise<boolean> {
   return native.isWsConnected();
 }
 
+export function getTrustedMacFingerprint(): Promise<string | null> {
+  return native.getTrustedMacFingerprint();
+}
+
+export function setTrustedMacFingerprint(fingerprint: string | null): Promise<boolean> {
+  return native.setTrustedMacFingerprint(fingerprint);
+}
+
 export function discoverMacWsUrl(timeoutMs?: number): Promise<string | null> {
   return native.discoverMacWsUrl(timeoutMs ?? null);
 }
@@ -65,7 +73,7 @@ export function requestBatteryOptimizationExemption(): Promise<void> {
   return native.requestBatteryOptimizationExemption();
 }
 
-export type WsStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+export type WsStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'untrusted';
 export type DiscoveryStatus = 'idle' | 'searching' | 'found' | 'not_found';
 
 export function addClipboardChangeListener(listener: (text: string) => void) {
